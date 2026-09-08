@@ -1,6 +1,12 @@
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    MenuButtonWebApp,
+    Message,
+    WebAppInfo,
+)
 
 from . import catalog, config
 from .format_author import format_authors
@@ -8,12 +14,20 @@ from .format_author import format_authors
 bot = Bot(config.TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
+APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html"
+
 
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="📚 Открыть библиотеку", web_app=WebAppInfo(url=APP_URL))]]
+    )
     await message.answer(
-        "Привет! Напиши название книги или автора — найду в библиотеке.\n"
-        "Дальше просто нажми на нужную книгу — откроется читалка прямо здесь, в Telegram."
+        "Привет! Это твоя читалка.\n\n"
+        "Открывай библиотеку кнопкой ниже (или значком рядом с полем ввода) — "
+        "там поиск с обложками, закладки и статистика чтения. "
+        "Либо просто напиши название книги прямо сюда — пришлю подборку.",
+        reply_markup=kb,
     )
 
 
@@ -33,7 +47,7 @@ async def search_handler(message: Message) -> None:
         author = format_authors(r.author)
         label = f"{author} — {r.title}" if author else r.title
         label = label[:64]
-        url = f"{config.WEBAPP_BASE_URL}/app/index.html?book={r.id}"
+        url = f"{APP_URL}?book={r.id}"
         buttons.append([InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -41,4 +55,7 @@ async def search_handler(message: Message) -> None:
 
 
 async def run_bot() -> None:
+    await bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(text="Библиотека", web_app=WebAppInfo(url=APP_URL))
+    )
     await dp.start_polling(bot)

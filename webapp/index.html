@@ -6,152 +6,393 @@
 <title>Читалка</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { color-scheme: light dark; --font-size: 17px; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
+  :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--tg-theme-bg-color, #ffffff);
     color: var(--tg-theme-text-color, #111111);
   }
-  #toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ---------- layout ---------- */
+  #app { display: flex; flex-direction: column; height: 100%; }
+  #screens { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 70px; }
+  .screen { display: none; padding: 12px 14px 8px; }
+  .screen.active { display: block; }
+
+  #tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f5);
+    border-top: 1px solid rgba(127,127,127,0.2);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 20;
+  }
+  #tabbar button {
+    flex: 1; border: none; background: none; padding: 10px 0 8px;
+    font-size: 11px; color: var(--tg-theme-hint-color, #888);
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  #tabbar button .icon { font-size: 20px; }
+  #tabbar button.active { color: var(--accent); }
+
+  /* ---------- search ---------- */
+  #searchInput {
+    width: 100%; padding: 10px 14px; border-radius: 12px; border: none;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f2);
+    color: inherit; font-size: 16px; margin-bottom: 12px;
+  }
+  #searchInput:focus { outline: 2px solid var(--accent); }
+  #searchHint { text-align: center; opacity: 0.5; padding: 40px 20px; font-size: 14px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 14px 10px;
+  }
+  .card { display: flex; flex-direction: column; text-align: left; }
+  .cover {
+    width: 100%; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden;
+    background: linear-gradient(135deg, #7f7fd5, #86a8e7 50%, #91eae4);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    position: relative;
+  }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover .fallback { color: #fff; font-size: 30px; opacity: 0.85; padding: 6px; text-align: center; }
+  .card .t { font-size: 13px; font-weight: 600; margin-top: 6px; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .a { font-size: 11.5px; opacity: 0.6; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { position: absolute; top: 5px; right: 5px; font-size: 13px;
+    background: rgba(0,0,0,0.45); border-radius: 6px; padding: 1px 4px; }
+
+  /* ---------- library ---------- */
+  #statsRow { display: flex; gap: 8px; margin-bottom: 18px; }
+  .stat { flex: 1; background: var(--tg-theme-secondary-bg-color, #f0f0f2); border-radius: 12px;
+    padding: 10px 8px; text-align: center; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { font-size: 11px; opacity: 0.6; }
+  h3.section-title { font-size: 15px; margin: 0 0 10px; }
+  .empty-hint { opacity: 0.5; font-size: 13px; padding: 4px 0 18px; }
+  section + section { margin-top: 20px; }
+
+  /* ---------- reader ---------- */
+  #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
+  #reader.active { display: flex; }
+  #readerToolbar {
+    display: flex; align-items: center; gap: 6px; padding: 10px 10px;
     background: var(--tg-theme-secondary-bg-color, #f4f4f5);
     border-bottom: 1px solid rgba(0,0,0,0.08);
   }
-  #toolbar button {
-    border: none;
-    background: var(--tg-theme-button-color, #2481cc);
-    color: var(--tg-theme-button-text-color, #ffffff);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 15px;
+  #readerToolbar button {
+    border: none; background: none; font-size: 18px; padding: 6px 8px; border-radius: 8px; color: inherit;
   }
-  #title {
-    flex: 1;
-    text-align: center;
-    font-weight: 600;
-    font-size: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  #readerToolbar button.on { color: var(--accent); }
+  #readerToolbar .fsz { font-size: 14px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
+  #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; white-space: pre-line; }
+
+  #pager { position: relative; flex: 1; overflow: hidden; }
+  #columns {
+    height: 100%; columns: 1; column-gap: 0; overflow-x: hidden;
+    padding: 4px 20px 24px; line-height: 1.65; font-size: var(--font-size);
+    transition: transform 0.25s ease; will-change: transform;
   }
-  #content {
-    padding: 20px 20px 100px;
-    max-width: 680px;
-    margin: 0 auto;
-    line-height: 1.65;
-    font-size: var(--font-size);
-  }
-  #content p { margin: 0 0 1em; text-align: justify; }
-  #content h1, #content h2, #content h3, #content h4 {
-    margin: 1.4em 0 0.7em;
-    line-height: 1.3;
-  }
-  #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; }
+  #columns p { margin: 0 0 1em; text-align: justify; }
+  #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; break-after: avoid; }
   hr { border: none; border-top: 1px solid rgba(127,127,127,0.25); margin: 2.5em 0; }
+  #tap-prev, #tap-next { position: absolute; top: 0; bottom: 0; width: 25%; z-index: 5; }
+  #tap-prev { left: 0; } #tap-next { right: 0; }
+  #pageIndicator { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
+    font-size: 12px; opacity: 0.5; pointer-events: none; }
 </style>
 </head>
 <body>
-  <div id="toolbar">
-    <button id="smaller" aria-label="Меньше шрифт">A-</button>
-    <button id="bigger" aria-label="Больше шрифт">A+</button>
-    <span id="title"></span>
+<div id="app">
+  <div id="screens">
+    <div class="screen active" id="screen-search">
+      <input id="searchInput" placeholder="Название книги или автор…" />
+      <div id="searchHint">Начни печатать, чтобы найти книгу</div>
+      <div id="searchResults" class="grid"></div>
+    </div>
+
+    <div class="screen" id="screen-library">
+      <div id="statsRow"></div>
+      <section>
+        <h3 class="section-title">Продолжить чтение</h3>
+        <div id="historyGrid" class="grid"></div>
+        <div class="empty-hint" id="historyEmpty" hidden>Пока ничего не читала</div>
+      </section>
+      <section>
+        <h3 class="section-title">Закладки</h3>
+        <div id="bookmarksGrid" class="grid"></div>
+        <div class="empty-hint" id="bookmarksEmpty" hidden>Нет закладок</div>
+      </section>
+      <section>
+        <h3 class="section-title">Читать дальше</h3>
+        <div id="toReadGrid" class="grid"></div>
+        <div class="empty-hint" id="toReadEmpty" hidden>Список пуст</div>
+      </section>
+    </div>
+  </div>
+
+  <div id="tabbar">
+    <button data-tab="search" class="active"><span class="icon">🔍</span>Поиск</button>
+    <button data-tab="library"><span class="icon">📚</span>Библиотека</button>
+  </div>
+</div>
+
+<div id="reader">
+  <div id="readerToolbar">
+    <button id="backBtn">←</button>
+    <button id="bookmarkBtn">🔖</button>
+    <button id="toReadBtn">➕</button>
+    <span id="readerTitle"></span>
+    <button class="fsz" id="smaller">A-</button>
+    <button class="fsz" id="bigger">A+</button>
   </div>
   <div id="status">Загрузка…</div>
-  <div id="content" style="display:none"></div>
+  <div id="pager" style="display:none">
+    <div id="columns"></div>
+    <div id="tap-prev"></div>
+    <div id="tap-next"></div>
+    <div id="pageIndicator"></div>
+  </div>
+</div>
 
-  <script>
-    const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg) { tg.ready(); tg.expand(); }
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || 0;
 
-    const params = new URLSearchParams(location.search);
-    const startParam = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
-    const bookId = params.get('book') || startParam;
+const params = new URLSearchParams(location.search);
+const startParam = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+const directBookId = params.get('book') || startParam || null;
 
-    const statusEl = document.getElementById('status');
-    const contentEl = document.getElementById('content');
-    const titleEl = document.getElementById('title');
+/* ---------------- helpers ---------------- */
+function bookCard(b) {
+  const el = document.createElement('button');
+  el.className = 'card';
+  el.style.cssText = 'border:none;background:none;padding:0;color:inherit;';
+  const badge = b.finished ? '✓' : (b.total_pages ? `${Math.round(100*(b.last_page+1)/b.total_pages)}%` : '');
+  el.innerHTML = `
+    <div class="cover">
+      <img loading="lazy" src="/api/cover/${b.id}" onerror="this.remove()" />
+      <div class="fallback">📖</div>
+      ${badge ? `<div class="badge">${badge}</div>` : ''}
+    </div>
+    <div class="t">${escapeHtml(b.title || '')}</div>
+    <div class="a">${escapeHtml(b.author || '')}</div>
+  `;
+  el.addEventListener('click', () => openReader(b.id));
+  return el;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function renderGrid(container, items) {
+  container.innerHTML = '';
+  items.forEach(b => container.appendChild(bookCard(b)));
+}
 
-    let fontSize = 17;
-    function applyFont() {
-      document.documentElement.style.setProperty('--font-size', fontSize + 'px');
-    }
-    document.getElementById('bigger').onclick = () => { fontSize = Math.min(fontSize + 1, 28); applyFont(); saveFont(); };
-    document.getElementById('smaller').onclick = () => { fontSize = Math.max(fontSize - 1, 13); applyFont(); saveFont(); };
+/* ---------------- tabs ---------------- */
+document.querySelectorAll('#tabbar button').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+function switchTab(name) {
+  document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
+  if (name === 'library') loadLibrary();
+}
 
-    function saveFont() {
-      try { localStorage.setItem('reader_font_size', String(fontSize)); } catch (e) {}
-    }
-    function restoreFont() {
-      try {
-        const v = localStorage.getItem('reader_font_size');
-        if (v) fontSize = parseInt(v, 10);
-      } catch (e) {}
-      applyFont();
-    }
+/* ---------------- search ---------------- */
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+const searchHint = document.getElementById('searchHint');
+let searchTimer = null;
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = searchInput.value.trim();
+  if (!q) { searchResults.innerHTML = ''; searchHint.style.display = 'block'; searchHint.textContent = 'Начни печатать, чтобы найти книгу'; return; }
+  searchTimer = setTimeout(() => runSearch(q), 350);
+});
+async function runSearch(q) {
+  searchHint.style.display = 'block';
+  searchHint.textContent = 'Ищу…';
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const items = await res.json();
+    searchHint.style.display = items.length ? 'none' : 'block';
+    if (!items.length) searchHint.textContent = 'Ничего не нашла 🤷';
+    renderGrid(searchResults, items);
+  } catch (e) {
+    searchHint.style.display = 'block';
+    searchHint.textContent = 'Ошибка поиска';
+  }
+}
 
-    function scrollKey() { return 'scroll_' + bookId; }
+/* ---------------- library ---------------- */
+async function loadLibrary() {
+  if (!userId) return;
+  try {
+    const res = await fetch(`/api/library/${userId}/overview`);
+    const data = await res.json();
+    const s = data.stats;
+    document.getElementById('statsRow').innerHTML = `
+      <div class="stat"><b>${s.books_opened}</b><span>открыто</span></div>
+      <div class="stat"><b>${s.books_finished}</b><span>дочитано</span></div>
+      <div class="stat"><b>${s.bookmarks_count}</b><span>закладок</span></div>
+    `;
+    renderGrid(document.getElementById('historyGrid'), data.history);
+    document.getElementById('historyEmpty').hidden = data.history.length > 0;
+    renderGrid(document.getElementById('bookmarksGrid'), data.bookmarks);
+    document.getElementById('bookmarksEmpty').hidden = data.bookmarks.length > 0;
+    renderGrid(document.getElementById('toReadGrid'), data.to_read);
+    document.getElementById('toReadEmpty').hidden = data.to_read.length > 0;
+  } catch (e) { /* тихо */ }
+}
 
-    function restoreScroll() {
-      const key = scrollKey();
-      if (tg && tg.CloudStorage) {
-        tg.CloudStorage.getItem(key, (err, value) => {
-          if (!err && value) window.scrollTo(0, parseInt(value, 10));
-        });
-      } else {
-        try {
-          const v = localStorage.getItem(key);
-          if (v) window.scrollTo(0, parseInt(v, 10));
-        } catch (e) {}
-      }
-    }
+/* ---------------- reader ---------------- */
+const readerEl = document.getElementById('reader');
+const statusEl = document.getElementById('status');
+const pagerEl = document.getElementById('pager');
+const columnsEl = document.getElementById('columns');
+const readerTitleEl = document.getElementById('readerTitle');
+const indicatorEl = document.getElementById('pageIndicator');
+const bookmarkBtn = document.getElementById('bookmarkBtn');
+const toReadBtn = document.getElementById('toReadBtn');
 
-    let saveTimer = null;
-    window.addEventListener('scroll', () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
-        const key = scrollKey();
-        const value = String(window.scrollY);
-        if (tg && tg.CloudStorage) {
-          tg.CloudStorage.setItem(key, value);
-        } else {
-          try { localStorage.setItem(key, value); } catch (e) {}
-        }
-      }, 400);
-    });
+let fontSize = 17;
+let pageWidth = 0, totalPages = 1, currentPage = 0;
+let currentBookId = null;
+let isBookmarked = false, isToRead = false;
 
-    async function load() {
-      if (!bookId) {
-        statusEl.textContent = 'Книга не выбрана.';
-        return;
-      }
-      try {
-        const res = await fetch(`/api/book/${bookId}`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || res.statusText);
-        }
-        const data = await res.json();
-        titleEl.textContent = data.title || '';
-        if (tg) tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success');
-        contentEl.innerHTML = data.chapters.map(c => c.html).join('<hr/>');
-        statusEl.style.display = 'none';
-        contentEl.style.display = 'block';
-        restoreScroll();
-      } catch (e) {
-        statusEl.textContent = 'Не удалось загрузить книгу 😕\n' + e.message;
-      }
-    }
+function applyFont() { document.documentElement.style.setProperty('--font-size', fontSize + 'px'); }
+function saveFont() { try { localStorage.setItem('reader_font_size', String(fontSize)); } catch (e) {} }
+function restoreFont() {
+  try { const v = localStorage.getItem('reader_font_size'); if (v) fontSize = parseInt(v, 10); } catch (e) {}
+  applyFont();
+}
+document.getElementById('bigger').onclick = () => { fontSize = Math.min(fontSize + 1, 28); applyFont(); saveFont(); requestAnimationFrame(recalcPages); };
+document.getElementById('smaller').onclick = () => { fontSize = Math.max(fontSize - 1, 13); applyFont(); saveFont(); requestAnimationFrame(recalcPages); };
 
-    restoreFont();
-    load();
-  </script>
+function recalcPages() {
+  pageWidth = pagerEl.clientWidth;
+  columnsEl.style.width = pageWidth + 'px';
+  columnsEl.style.columnWidth = pageWidth + 'px';
+  totalPages = Math.max(1, Math.round(columnsEl.scrollWidth / pageWidth));
+  goToPage(Math.min(currentPage, totalPages - 1));
+}
+function goToPage(n) {
+  currentPage = Math.max(0, Math.min(n, totalPages - 1));
+  columnsEl.style.transform = `translateX(${-currentPage * pageWidth}px)`;
+  indicatorEl.textContent = `${currentPage + 1} / ${totalPages}`;
+  saveProgress();
+}
+function nextPage() { goToPage(currentPage + 1); }
+function prevPage() { goToPage(currentPage - 1); }
+document.getElementById('tap-next').addEventListener('click', nextPage);
+document.getElementById('tap-prev').addEventListener('click', prevPage);
+let touchStartX = null;
+pagerEl.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+pagerEl.addEventListener('touchend', e => {
+  if (touchStartX === null) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 40) { dx < 0 ? nextPage() : prevPage(); }
+  touchStartX = null;
+}, { passive: true });
+window.addEventListener('keydown', e => {
+  if (!readerEl.classList.contains('active')) return;
+  if (e.key === 'ArrowRight') nextPage();
+  if (e.key === 'ArrowLeft') prevPage();
+});
+window.addEventListener('resize', () => { if (readerEl.classList.contains('active')) requestAnimationFrame(recalcPages); });
+
+function positionKey(id) { return 'page_' + id; }
+let progressTimer = null;
+function saveProgress() {
+  if (!currentBookId) return;
+  try { localStorage.setItem(positionKey(currentBookId), String(currentPage)); } catch (e) {}
+  clearTimeout(progressTimer);
+  progressTimer = setTimeout(() => {
+    if (!userId) return;
+    const finished = currentPage >= totalPages - 1;
+    fetch(`/api/library/${userId}/progress/${currentBookId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: currentPage, total_pages: totalPages, finished }),
+    }).catch(() => {});
+  }, 600);
+}
+function restorePosition(id) {
+  let v = 0;
+  try { v = parseInt(localStorage.getItem(positionKey(id)) || '0', 10); } catch (e) {}
+  return v;
+}
+
+async function openReader(bookId) {
+  currentBookId = bookId;
+  currentPage = 0;
+  readerEl.classList.add('active');
+  statusEl.style.display = 'block';
+  pagerEl.style.display = 'none';
+  statusEl.textContent = 'Загрузка…\nПри первом открытии книги может занять до минуты.';
+  readerTitleEl.textContent = '';
+  bookmarkBtn.classList.remove('on');
+  toReadBtn.classList.remove('on');
+
+  if (userId) {
+    fetch(`/api/library/${userId}/state/${bookId}`).then(r => r.json()).then(st => {
+      isBookmarked = st.bookmarked; isToRead = st.to_read;
+      bookmarkBtn.classList.toggle('on', isBookmarked);
+      toReadBtn.classList.toggle('on', isToRead);
+    }).catch(() => {});
+  }
+
+  try {
+    const res = await fetch(`/api/book/${bookId}`);
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const data = await res.json();
+    readerTitleEl.textContent = data.title || '';
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    columnsEl.innerHTML = data.chapters.map(c => c.html).join('<hr/>');
+    statusEl.style.display = 'none';
+    pagerEl.style.display = 'block';
+    requestAnimationFrame(() => { recalcPages(); goToPage(restorePosition(bookId)); });
+  } catch (e) {
+    statusEl.textContent = 'Не удалось загрузить книгу 😕\n' + e.message;
+  }
+}
+function closeReader() { readerEl.classList.remove('active'); currentBookId = null; }
+document.getElementById('backBtn').addEventListener('click', closeReader);
+
+bookmarkBtn.addEventListener('click', async () => {
+  if (!userId || !currentBookId) return;
+  const res = await fetch(`/api/library/${userId}/bookmark/${currentBookId}`, { method: 'POST' });
+  const data = await res.json();
+  isBookmarked = data.bookmarked;
+  bookmarkBtn.classList.toggle('on', isBookmarked);
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+});
+toReadBtn.addEventListener('click', async () => {
+  if (!userId || !currentBookId) return;
+  const res = await fetch(`/api/library/${userId}/to-read/${currentBookId}`, { method: 'POST' });
+  const data = await res.json();
+  isToRead = data.to_read;
+  toReadBtn.classList.toggle('on', isToRead);
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+});
+
+/* ---------------- init ---------------- */
+restoreFont();
+if (directBookId) {
+  openReader(directBookId);
+} else {
+  switchTab('search');
+}
+</script>
 </body>
 </html>

@@ -31,6 +31,8 @@ class BookMeta(NamedTuple):
     archive: str
     file: str
     ext: str
+    libid: str
+    source_inp: str
 
 
 def _connect() -> sqlite3.Connection:
@@ -86,10 +88,30 @@ def _rows_from_ids(conn: sqlite3.Connection, ids: list[int]) -> list[SearchResul
     return [by_id[i] for i in ids if i in by_id]
 
 
+def _dedupe(results: list[SearchResult], limit: int) -> list[SearchResult]:
+    """В каталоге много одинаковых книг из разных источников (flibusta/librusec) —
+    схлопываем по (название, автор), оставляя первое (самое релевантное) вхождение."""
+    seen: set[tuple[str, str]] = set()
+    deduped = []
+    for r in results:
+        key = (r.title.strip().lower(), r.author.strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
 def search(query: str, limit: int = 15) -> list[SearchResult]:
     query = query.strip()
     if not query:
         return []
+
+    # берём с запасом — после дедупликации по (название, автор) части
+    # результатов не хватило бы на полный limit
+    fetch_limit = limit * 4
 
     conn = _connect()
     try:
@@ -100,7 +122,7 @@ def search(query: str, limit: int = 15) -> list[SearchResult]:
         cur = conn.cursor()
         cur.execute(
             "SELECT rowid FROM books_fts WHERE books_fts MATCH ? ORDER BY rank LIMIT ?",
-            (match_expr, limit),
+            (match_expr, fetch_limit),
         )
         ids = [row[0] for row in cur.fetchall()]
 
@@ -111,11 +133,12 @@ def search(query: str, limit: int = 15) -> list[SearchResult]:
                 return []
             cur.execute(
                 "SELECT rowid FROM books_trgm WHERE books_trgm MATCH ? ORDER BY rank LIMIT ?",
-                (trgm_query, limit),
+                (trgm_query, fetch_limit),
             )
             ids = [row[0] for row in cur.fetchall()]
 
-        return _rows_from_ids(conn, ids)
+        rows = _rows_from_ids(conn, ids)
+        return _dedupe(rows, limit)
     finally:
         conn.close()
 
@@ -125,7 +148,7 @@ def get_book(book_id: int) -> BookMeta | None:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT rowid, author, title, archive, file, ext FROM books WHERE rowid = ?",
+            "SELECT rowid, author, title, archive, file, ext, libid, source_inp FROM books WHERE rowid = ?",
             (book_id,),
         )
         row = cur.fetchone()
