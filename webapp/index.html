@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-peek-center-20260908 -->
+<!-- rb-title-progress-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
@@ -119,15 +119,18 @@
   /* ---------- reader ---------- */
   #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
   #reader.active { display: flex; }
-  #readerToolbar {
-    display: flex; align-items: center; gap: 4px; padding: 8px 8px;
+  #readerChrome {
+    flex-shrink: 0;
     background: var(--tg-theme-secondary-bg-color, #f4f4f5);
     border-bottom: 1px solid rgba(0,0,0,0.08);
-    flex-shrink: 0; overflow-x: auto; flex-wrap: nowrap;
   }
-  #reader.chrome-hidden #readerToolbar {
+  #reader.chrome-hidden #readerChrome {
     height: 0; padding: 0; overflow: hidden; border: none; opacity: 0;
     pointer-events: none;
+  }
+  #readerToolbar {
+    display: flex; align-items: center; gap: 4px; padding: 8px 8px 4px;
+    overflow-x: auto; flex-wrap: nowrap;
   }
   #readerToolbar button {
     border: none; background: none; font-size: 17px; padding: 6px 7px; border-radius: 8px; color: inherit;
@@ -135,8 +138,14 @@
   }
   #readerToolbar button.on { background: var(--accent); color: #fff; border-radius: 8px; }
   #readerToolbar .fsz { font-size: 13px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
-  #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 12px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
+  #readerMeta { padding: 2px 12px 8px; }
+  #readerTitle {
+    font-weight: 600; font-size: 14px; line-height: 1.3;
+    text-align: left; white-space: normal; overflow: hidden;
+    word-break: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  }
+  #readerProgress { margin-top: 3px; font-size: 12px; opacity: 0.6; }
   #chromePeek {
     display: none; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
     z-index: 60; border: none; border-radius: 999px;
@@ -167,7 +176,7 @@
   #pager.scroll-mode #tap-prev, #pager.scroll-mode #tap-next { display: none; }
   #pageIndicator { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
     font-size: 12px; opacity: 0.5; pointer-events: none; background: var(--tg-theme-bg-color, #fff); }
-  #pager.scroll-mode #pageIndicator { display: none; }
+  #reader:not(.chrome-hidden) #pageIndicator { display: none; }
 </style>
 </head>
 <body>
@@ -232,17 +241,22 @@
 </div>
 
 <div id="reader">
-  <div id="readerToolbar">
-    <button id="backBtn" title="Закрыть книгу">←</button>
-    <button id="bookmarkBtn" title="Закладка">🔖</button>
-    <button id="toReadBtn" title="Читать дальше">➕</button>
-    <span id="readerTitle"></span>
-    <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
-    <button class="fsz" id="autoBtn" title="Старт / пауза автопрокрутки">▶️</button>
-    <button class="fsz" id="speedBtn" title="Скорость автопрокрутки">1×</button>
-    <button class="fsz" id="smaller" title="Мельче">A-</button>
-    <button class="fsz" id="bigger" title="Крупнее">A+</button>
-    <button class="fsz" id="hideChromeBtn" title="Спрятать панель">⌃</button>
+  <div id="readerChrome">
+    <div id="readerToolbar">
+      <button id="backBtn" title="Закрыть книгу">←</button>
+      <button id="bookmarkBtn" title="Закладка">🔖</button>
+      <button id="toReadBtn" title="Читать дальше">➕</button>
+      <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
+      <button class="fsz" id="autoBtn" title="Старт / пауза автопрокрутки">▶️</button>
+      <button class="fsz" id="speedBtn" title="Скорость автопрокрутки">1×</button>
+      <button class="fsz" id="smaller" title="Мельче">A-</button>
+      <button class="fsz" id="bigger" title="Крупнее">A+</button>
+      <button class="fsz" id="hideChromeBtn" title="Спрятать панель">⌃</button>
+    </div>
+    <div id="readerMeta">
+      <div id="readerTitle"></div>
+      <div id="readerProgress"></div>
+    </div>
   </div>
   <button type="button" id="chromePeek">настройки ▾</button>
   <div id="status">Загрузка…</div>
@@ -480,6 +494,7 @@ const pagerEl = document.getElementById('pager');
 const columnsEl = document.getElementById('columns');
 const readerTitleEl = document.getElementById('readerTitle');
 const indicatorEl = document.getElementById('pageIndicator');
+const progressEl = document.getElementById('readerProgress');
 const bookmarkBtn = document.getElementById('bookmarkBtn');
 const toReadBtn = document.getElementById('toReadBtn');
 
@@ -551,10 +566,15 @@ function recalcPages() {
   totalPages = Math.max(1, Math.round(columnsEl.scrollHeight / pageHeight));
   goToPage(Math.min(currentPage, totalPages - 1));
 }
+function updateProgressLabel() {
+  const text = `${currentPage + 1} / ${totalPages}`;
+  indicatorEl.textContent = text;
+  progressEl.textContent = totalPages ? `страница ${currentPage + 1} из ${totalPages}` : '';
+}
 function goToPage(n) {
   currentPage = Math.max(0, Math.min(n, totalPages - 1));
   pagerEl.scrollTop = currentPage * pageHeight;
-  indicatorEl.textContent = `${currentPage + 1} / ${totalPages}`;
+  updateProgressLabel();
   saveProgress();
 }
 function nextPage() { if (readerMode === 'paged') goToPage(currentPage + 1); }
@@ -598,6 +618,7 @@ pagerEl.addEventListener('scroll', () => {
   scrollSaveTimer = setTimeout(() => {
     const frac = pagerEl.scrollTop / Math.max(1, columnsEl.scrollHeight - pagerEl.clientHeight);
     currentPage = Math.round(frac * (totalPages - 1));
+    updateProgressLabel();
     saveProgress();
   }, 500);
 }, { passive: true });
@@ -633,6 +654,7 @@ async function openReader(bookId) {
   pagerEl.style.display = 'none';
   statusEl.textContent = 'Загрузка…\nПри первом открытии книги может занять до минуты.';
   readerTitleEl.textContent = '';
+  progressEl.textContent = '';
   bookmarkBtn.classList.remove('on');
   toReadBtn.classList.remove('on');
 
@@ -665,7 +687,9 @@ async function openReader(bookId) {
         pageHeight = pagerEl.clientHeight;
         totalPages = Math.max(1, Math.round(columnsEl.scrollHeight / pageHeight));
         const savedPage = restorePosition(bookId);
+        currentPage = savedPage;
         pagerEl.scrollTop = (savedPage / Math.max(1, totalPages - 1)) * (columnsEl.scrollHeight - pagerEl.clientHeight);
+        updateProgressLabel();
       }
       // панель прячем через секунду, чтобы не торчала поверх текста
       setTimeout(() => {
