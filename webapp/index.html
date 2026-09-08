@@ -63,8 +63,8 @@
   .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .cover .fallback { color: #fff; font-size: 30px; opacity: 0.85; padding: 6px; text-align: center; }
   .card .t { font-size: 13px; font-weight: 600; margin-top: 6px; line-height: 1.25;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card .a { font-size: 11.5px; opacity: 0.6; margin-top: 2px;
+    overflow-wrap: break-word; word-break: break-word; max-width: 100%; }
+  .card .a { font-size: 11.5px; opacity: 0.6; margin-top: 2px; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .badge { position: absolute; top: 5px; right: 5px; font-size: 13px;
     background: rgba(0,0,0,0.45); border-radius: 6px; padding: 1px 4px; }
@@ -112,8 +112,11 @@
      известные баги с наездом текста/пропажей страниц) — а обычным вертикальным
      скроллом, который мы либо листаем программно по экрану (paged), либо
      отдаём как есть браузеру (scroll/лента). */
-  #pager { position: relative; flex: 1; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
-  #pager.scroll-mode { overflow-y: auto; }
+  /* overflow-y:hidden в paged-режиме принципиально — иначе WebKit пытается
+     ОДНОВРЕМЕННО со своей нативной инерцией скроллить контейнер, пока наш JS
+     позиционирует его через scrollTop, и текст дёргается туда-сюда */
+  #pager { position: relative; flex: 1; overflow-y: hidden; touch-action: none; }
+  #pager.scroll-mode { overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
   #columns {
     padding: 4px 20px 40px; line-height: 1.65; font-size: var(--font-size);
   }
@@ -191,6 +194,7 @@
     <button id="toReadBtn">➕</button>
     <span id="readerTitle"></span>
     <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
+    <button class="fsz" id="autoBtn" title="Автопрокрутка">▶️</button>
     <button class="fsz" id="smaller">A-</button>
     <button class="fsz" id="bigger">A+</button>
   </div>
@@ -220,7 +224,7 @@ function bookCard(b) {
   const badge = b.finished ? '✓' : (b.total_pages ? `${Math.round(100*(b.last_page+1)/b.total_pages)}%` : '');
   el.innerHTML = `
     <div class="cover">
-      <img loading="lazy" src="/api/cover/${b.id}" onerror="this.remove()" />
+      <img loading="lazy" src="/api/cover/${b.id}" onerror="this.remove()" onload="this.nextElementSibling.remove()" />
       <div class="fallback">📖</div>
       ${badge ? `<div class="badge">${badge}</div>` : ''}
     </div>
@@ -382,13 +386,16 @@ function nextPage() { if (readerMode === 'paged') goToPage(currentPage + 1); }
 function prevPage() { if (readerMode === 'paged') goToPage(currentPage - 1); }
 document.getElementById('tap-next').addEventListener('click', nextPage);
 document.getElementById('tap-prev').addEventListener('click', prevPage);
-let touchStartX = null;
-pagerEl.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+// свайп вертикальный (как в большинстве читалок): вверх — следующая
+// страница, вниз — предыдущая. touch-action:none на #pager в paged-режиме
+// не даёт браузеру одновременно тянуть нативный скролл поверх этого
+let touchStartY = null;
+pagerEl.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
 pagerEl.addEventListener('touchend', e => {
-  if (touchStartX === null || readerMode !== 'paged') { touchStartX = null; return; }
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  if (Math.abs(dx) > 40) { dx < 0 ? nextPage() : prevPage(); }
-  touchStartX = null;
+  if (touchStartY === null || readerMode !== 'paged') { touchStartY = null; return; }
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dy) > 40) { dy < 0 ? nextPage() : prevPage(); }
+  touchStartY = null;
 }, { passive: true });
 window.addEventListener('keydown', e => {
   if (!readerEl.classList.contains('active')) return;
@@ -431,6 +438,7 @@ function restorePosition(id) {
 }
 
 async function openReader(bookId) {
+  stopAutoScroll();
   currentBookId = bookId;
   currentPage = 0;
   readerEl.classList.add('active');
@@ -474,7 +482,50 @@ async function openReader(bookId) {
     statusEl.textContent = 'Не удалось загрузить книгу 😕\n' + e.message;
   }
 }
-function closeReader() { readerEl.classList.remove('active'); currentBookId = null; }
+// ---------------- автопрокрутка (текст сам ползёт вниз) ----------------
+const autoBtn = document.getElementById('autoBtn');
+let autoScrollRAF = null;
+let autoScrollSpeed = 28; // px/сек, комфортный темп для чтения
+
+function stopAutoScroll() {
+  if (autoScrollRAF) cancelAnimationFrame(autoScrollRAF);
+  autoScrollRAF = null;
+  autoBtn.textContent = '▶️';
+  autoBtn.classList.remove('on');
+}
+function startAutoScroll() {
+  if (readerMode !== 'scroll') {
+    readerMode = 'scroll';
+    try { localStorage.setItem('reader_mode', readerMode); } catch (e) {}
+    applyMode();
+  }
+  autoBtn.textContent = '⏸';
+  autoBtn.classList.add('on');
+  let last = performance.now();
+  function step(now) {
+    const dt = (now - last) / 1000;
+    last = now;
+    pagerEl.scrollTop += autoScrollSpeed * dt;
+    if (pagerEl.scrollTop + pagerEl.clientHeight >= columnsEl.scrollHeight - 2) {
+      stopAutoScroll();
+      return;
+    }
+    autoScrollRAF = requestAnimationFrame(step);
+  }
+  autoScrollRAF = requestAnimationFrame(step);
+}
+autoBtn.addEventListener('click', () => { autoScrollRAF ? stopAutoScroll() : startAutoScroll(); });
+// долгий тап — ускорить/замедлить (переключение по кругу)
+let autoBtnPressTimer = null;
+autoBtn.addEventListener('touchstart', () => {
+  autoBtnPressTimer = setTimeout(() => {
+    autoScrollSpeed = autoScrollSpeed >= 60 ? 15 : autoScrollSpeed + 15;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+  }, 500);
+}, { passive: true });
+autoBtn.addEventListener('touchend', () => clearTimeout(autoBtnPressTimer), { passive: true });
+
+function closeReader() { stopAutoScroll(); readerEl.classList.remove('active'); currentBookId = null; }
 document.getElementById('backBtn').addEventListener('click', closeReader);
 
 bookmarkBtn.addEventListener('click', async () => {
