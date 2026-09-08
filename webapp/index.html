@@ -385,18 +385,27 @@ function goToPage(n) {
 }
 function nextPage() { if (readerMode === 'paged') goToPage(currentPage + 1); }
 function prevPage() { if (readerMode === 'paged') goToPage(currentPage - 1); }
+// click — для мыши/десктопа (свайп/тап там не бывает)
 document.getElementById('tap-next').addEventListener('click', nextPage);
 document.getElementById('tap-prev').addEventListener('click', prevPage);
-// свайп горизонтальный: влево — следующая страница, вправо — предыдущая
+// На touch-устройствах и тап, и свайп обрабатываем в одном touch-обработчике
+// (не полагаясь на синтетический 'click' — на дочерних див-зонах внутри
+// #pager с touch-action:none он срабатывает ненадёжно). Свайп — влево/вправо
 // (соответствует тап-зонам tap-prev/tap-next слева/справа экрана).
-// touch-action:none на #pager в paged-режиме не даёт браузеру одновременно
-// тянуть нативный скролл поверх этого
 let touchStartX = null;
 pagerEl.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
 pagerEl.addEventListener('touchend', e => {
   if (touchStartX === null || readerMode !== 'paged') { touchStartX = null; return; }
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  if (Math.abs(dx) > 40) { dx < 0 ? nextPage() : prevPage(); }
+  const endX = e.changedTouches[0].clientX;
+  const dx = endX - touchStartX;
+  if (Math.abs(dx) > 40) {
+    dx < 0 ? nextPage() : prevPage();
+  } else {
+    // это тап, не свайп — определяем зону по координате
+    const w = pagerEl.clientWidth;
+    if (endX < w * 0.25) prevPage();
+    else if (endX > w * 0.75) nextPage();
+  }
   touchStartX = null;
 }, { passive: true });
 window.addEventListener('keydown', e => {
@@ -527,15 +536,27 @@ function startAutoScroll() {
   }
 }
 autoBtn.addEventListener('click', () => { autoScrollRAF ? stopAutoScroll() : startAutoScroll(); });
-// долгий тап — ускорить/замедлить (переключение по кругу)
+// долгий тап — ускорить/замедлить (переключение по кругу); короткий тап —
+// включить/выключить. Обрабатываем через touchend (не полагаясь только на
+// синтетический click — на некоторых устройствах он не срабатывает надёжно
+// сразу после touch), preventDefault гасит дублирующий click.
 let autoBtnPressTimer = null;
+let autoBtnLongPressed = false;
 autoBtn.addEventListener('touchstart', () => {
+  autoBtnLongPressed = false;
   autoBtnPressTimer = setTimeout(() => {
+    autoBtnLongPressed = true;
     autoScrollSpeed = autoScrollSpeed >= 60 ? 15 : autoScrollSpeed + 15;
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
   }, 500);
 }, { passive: true });
-autoBtn.addEventListener('touchend', () => clearTimeout(autoBtnPressTimer), { passive: true });
+autoBtn.addEventListener('touchend', (e) => {
+  clearTimeout(autoBtnPressTimer);
+  if (!autoBtnLongPressed) {
+    e.preventDefault();
+    autoScrollRAF ? stopAutoScroll() : startAutoScroll();
+  }
+}, { passive: false });
 
 function closeReader() { stopAutoScroll(); readerEl.classList.remove('active'); currentBookId = null; }
 document.getElementById('backBtn').addEventListener('click', closeReader);
