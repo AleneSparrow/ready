@@ -52,7 +52,7 @@
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     gap: 14px 10px;
   }
-  .card { display: flex; flex-direction: column; text-align: left; }
+  .card { display: flex; flex-direction: column; text-align: left; width: 100%; min-width: 0; }
   .cover {
     width: 100%; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden;
     background: linear-gradient(135deg, #7f7fd5, #86a8e7 50%, #91eae4);
@@ -110,7 +110,7 @@
 
   #pager { position: relative; flex: 1; overflow: hidden; }
   #columns {
-    height: 100%; columns: 1; column-gap: 0; overflow-x: hidden;
+    height: 100%; columns: 1; column-gap: 0; column-fill: auto; overflow: hidden;
     padding: 4px 20px 24px; line-height: 1.65; font-size: var(--font-size);
     transition: transform 0.25s ease; will-change: transform;
   }
@@ -167,6 +167,9 @@
         <div id="toReadGrid" class="grid"></div>
         <div class="empty-hint" id="toReadEmpty" hidden>Список пуст</div>
       </section>
+      <button id="resetBtn" style="margin-top:26px;width:100%;padding:12px;border:none;border-radius:12px;background:rgba(255,70,70,0.12);color:#ff4757;font-size:14px;font-weight:600;">
+        🗑 Сбросить закладки и историю
+      </button>
     </div>
   </div>
 
@@ -301,6 +304,21 @@ async function loadLibrary() {
     document.getElementById('toReadCount').textContent = pluralBooks(data.to_read.length);
   } catch (e) { /* тихо */ }
 }
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  const warning = 'Все закладки, список "читать дальше" и история чтения будут удалены без возможности восстановить. Продолжить?';
+  const doReset = () => {
+    if (!userId) return;
+    fetch(`/api/library/${userId}/reset`, { method: 'POST' })
+      .then(() => loadLibrary())
+      .then(() => { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success'); });
+  };
+  if (tg && tg.showConfirm) {
+    tg.showConfirm(warning, (ok) => { if (ok) doReset(); });
+  } else if (confirm(warning)) {
+    doReset();
+  }
+});
 
 /* ---------------- reader ---------------- */
 const readerEl = document.getElementById('reader');

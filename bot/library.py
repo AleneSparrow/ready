@@ -167,6 +167,18 @@ def get_history(user_id: int, limit: int = 20) -> list[dict]:
         conn.close()
 
 
+def reset_user(user_id: int) -> None:
+    """Стирает все личные данные пользователя: закладки, 'читать дальше', историю."""
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM bookmarks WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM to_read WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM reading_history WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_stats(user_id: int) -> dict:
     conn = _connect()
     try:

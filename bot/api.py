@@ -155,6 +155,12 @@ def api_book_state(user_id: int, book_id: int):
     }
 
 
+@app.post("/api/library/{user_id}/reset")
+def api_library_reset(user_id: int):
+    library.reset_user(user_id)
+    return {"ok": True}
+
+
 @app.get("/api/library/{user_id}/overview")
 def api_library_overview(user_id: int):
     stats = library.get_stats(user_id)
