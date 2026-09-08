@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-howto-buttons-20260908 -->
+<!-- rb-autoscroll-accum-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
@@ -490,9 +490,9 @@ let isBookmarked = false, isToRead = false;
 let readerMode = 'paged'; // 'paged' | 'scroll'
 try { readerMode = localStorage.getItem('reader_mode') || 'paged'; } catch (e) {}
 
-const SPEED_STEPS = [15, 28, 42, 60];
+const SPEED_STEPS = [24, 40, 64, 96];
 const SPEED_LABELS = ['1×', '2×', '3×', '4×'];
-let autoScrollSpeed = 28;
+let autoScrollSpeed = 40;
 try {
   const savedSpeed = parseInt(localStorage.getItem('auto_scroll_speed') || '', 10);
   if (SPEED_STEPS.includes(savedSpeed)) autoScrollSpeed = savedSpeed;
@@ -691,10 +691,14 @@ function startAutoScroll() {
     autoBtn.textContent = '⏸';
     autoBtn.classList.add('on');
     let last = performance.now();
+    let y = pagerEl.scrollTop;
     function step(now) {
-      const dt = (now - last) / 1000;
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      pagerEl.scrollTop += autoScrollSpeed * dt;
+      // копим дробные пиксели: иначе scrollTop += 0.4 на iOS округляется в 0
+      // и на 1×/2× текст стоит на месте
+      y += autoScrollSpeed * dt;
+      pagerEl.scrollTop = y;
       if (pagerEl.scrollTop + pagerEl.clientHeight >= columnsEl.scrollHeight - 2) {
         stopAutoScroll();
         return;
