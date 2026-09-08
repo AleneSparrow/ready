@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-autoscroll-accum-20260908 -->
+<!-- rb-peek-right-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
@@ -138,10 +138,13 @@
   #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 12px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
   #chromePeek {
-    display: none; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
-    z-index: 60; border: none; border-radius: 999px;
-    padding: 4px 12px; font-size: 12px; font-weight: 600;
-    background: rgba(0,0,0,0.45); color: #fff;
+    display: none; position: absolute;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: 12px; left: auto; transform: none;
+    z-index: 80; border: none; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; font-weight: 700;
+    background: var(--accent); color: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.28);
   }
   #reader.chrome-hidden #chromePeek { display: block; }
   #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; white-space: pre-line; }
