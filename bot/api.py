@@ -80,6 +80,9 @@ def api_search(q: str):
 
 @app.get("/api/book/{book_id}")
 def api_book(book_id: int):
+    import time
+
+    t0 = time.monotonic()
     meta = catalog.get_book(book_id)
     if meta is None:
         raise HTTPException(404, "Книга не найдена в каталоге")
@@ -87,12 +90,18 @@ def api_book(book_id: int):
     if meta.ext not in ("fb2", "epub"):
         raise HTTPException(415, f"Формат {meta.ext} пока не поддерживается")
 
+    was_cached = os.path.exists(
+        os.path.join(extract.BOOK_CACHE_DIR, f"{meta.archive}__{meta.file}.{meta.ext}")
+    )
+    archive_was_cached = os.path.exists(os.path.join(extract.ARCHIVE_CACHE_DIR, meta.archive))
+
     try:
         raw = extract.extract_book(meta.archive, meta.file, meta.ext)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(502, f"Не удалось получить книгу с Google Drive: {e}")
+    t1 = time.monotonic()
 
     if meta.ext == "fb2":
         from .parse_fb2 import parse_fb2
@@ -102,6 +111,14 @@ def api_book(book_id: int):
         from .parse_epub import parse_epub
 
         parsed = parse_epub(raw)
+    t2 = time.monotonic()
+
+    print(
+        f"[timing] book={book_id} archive={meta.archive} "
+        f"book_cached={was_cached} archive_cached={archive_was_cached} "
+        f"extract={t1 - t0:.2f}s parse={t2 - t1:.2f}s",
+        flush=True,
+    )
 
     return {
         "id": book_id,
