@@ -172,6 +172,24 @@ def api_book_state(user_id: int, book_id: int):
     }
 
 
+@app.delete("/api/library/{user_id}/bookmark/{book_id}")
+def api_remove_bookmark(user_id: int, book_id: int):
+    library.remove_bookmark(user_id, book_id)
+    return {"ok": True}
+
+
+@app.delete("/api/library/{user_id}/to-read/{book_id}")
+def api_remove_to_read(user_id: int, book_id: int):
+    library.remove_to_read(user_id, book_id)
+    return {"ok": True}
+
+
+@app.delete("/api/library/{user_id}/history/{book_id}")
+def api_remove_history(user_id: int, book_id: int):
+    library.remove_history(user_id, book_id)
+    return {"ok": True}
+
+
 @app.post("/api/library/{user_id}/reset")
 def api_library_reset(user_id: int):
     library.reset_user(user_id)

@@ -167,6 +167,35 @@ def get_history(user_id: int, limit: int = 20) -> list[dict]:
         conn.close()
 
 
+def remove_bookmark(user_id: int, book_id: int) -> None:
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM bookmarks WHERE user_id=? AND book_id=?", (user_id, book_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def remove_to_read(user_id: int, book_id: int) -> None:
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM to_read WHERE user_id=? AND book_id=?", (user_id, book_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def remove_history(user_id: int, book_id: int) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "DELETE FROM reading_history WHERE user_id=? AND book_id=?", (user_id, book_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def reset_user(user_id: int) -> None:
     """Стирает все личные данные пользователя: закладки, 'читать дальше', историю."""
     conn = _connect()

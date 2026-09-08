@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
+<!-- rb-ui-folders-speed-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
@@ -67,7 +68,13 @@
   .card .a { font-size: 11.5px; opacity: 0.6; margin-top: 2px; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .badge { position: absolute; top: 5px; right: 5px; font-size: 13px;
-    background: rgba(0,0,0,0.45); border-radius: 6px; padding: 1px 4px; }
+    background: rgba(0,0,0,0.45); border-radius: 6px; padding: 1px 4px; color: #fff; }
+  .card-del {
+    position: absolute; top: 4px; left: 4px; z-index: 3;
+    width: 26px; height: 26px; border: none; border-radius: 50%;
+    background: rgba(255,70,70,0.95); color: #fff; font-size: 18px; line-height: 26px;
+    padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
 
   /* ---------- library ---------- */
   #statsRow { display: flex; gap: 8px; margin-bottom: 18px; }
@@ -75,37 +82,68 @@
     padding: 10px 8px; text-align: center; }
   .stat b { display: block; font-size: 20px; }
   .stat span { font-size: 11px; opacity: 0.6; }
-  .empty-hint { opacity: 0.5; font-size: 13px; padding: 4px 0 18px; }
-  section + section { margin-top: 22px; }
+  .empty-hint { opacity: 0.5; font-size: 13px; padding: 24px 8px; text-align: center; }
 
-  .folder-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .folder-grid { display: flex; flex-direction: column; gap: 12px; }
+  .folder-card {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    border: none; border-radius: 16px; padding: 14px 16px; text-align: left;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit;
+  }
   .folder-icon {
-    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
   .folder-icon.history { background: linear-gradient(135deg,#ff9a56,#ff6a88); }
   .folder-icon.bookmarks { background: linear-gradient(135deg,#f6d365,#fda085); }
   .folder-icon.toread { background: linear-gradient(135deg,#43cea2,#185a9d); }
-  .folder-text { display: flex; flex-direction: column; }
-  .folder-title { font-size: 15px; font-weight: 700; }
-  .folder-count { font-size: 12px; opacity: 0.55; }
+  .folder-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .folder-title { font-size: 16px; font-weight: 700; }
+  .folder-count { font-size: 13px; opacity: 0.55; margin-top: 2px; }
+  .folder-chevron { opacity: 0.35; font-size: 22px; }
+
+  #libraryFolder { display: none; }
+  #libraryFolder.open { display: block; }
+  #libraryHome.hidden { display: none; }
+  .folder-nav {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  }
+  .folder-nav button {
+    border: none; background: var(--tg-theme-secondary-bg-color, #f0f0f2);
+    color: inherit; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600;
+  }
+  .folder-nav h2 { flex: 1; margin: 0; font-size: 17px; }
+  .folder-nav button.on { background: var(--accent); color: #fff; }
 
   /* ---------- reader ---------- */
   #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
   #reader.active { display: flex; }
   #readerToolbar {
-    display: flex; align-items: center; gap: 6px; padding: 10px 10px;
+    display: flex; align-items: center; gap: 4px; padding: 8px 8px;
     background: var(--tg-theme-secondary-bg-color, #f4f4f5);
     border-bottom: 1px solid rgba(0,0,0,0.08);
+    flex-shrink: 0; overflow-x: auto; flex-wrap: nowrap;
+  }
+  #reader.chrome-hidden #readerToolbar {
+    height: 0; padding: 0; overflow: hidden; border: none; opacity: 0;
+    pointer-events: none;
   }
   #readerToolbar button {
-    border: none; background: none; font-size: 18px; padding: 6px 8px; border-radius: 8px; color: inherit;
+    border: none; background: none; font-size: 17px; padding: 6px 7px; border-radius: 8px; color: inherit;
+    flex-shrink: 0;
   }
   #readerToolbar button.on { background: var(--accent); color: #fff; border-radius: 8px; }
-  #readerToolbar .fsz { font-size: 14px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
-  #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 13px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #readerToolbar .fsz { font-size: 13px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
+  #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
+  #chromePeek {
+    display: none; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    z-index: 60; border: none; border-radius: 999px;
+    padding: 4px 12px; font-size: 12px; font-weight: 600;
+    background: rgba(0,0,0,0.45); color: #fff;
+  }
+  #reader.chrome-hidden #chromePeek { display: block; }
   #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; white-space: pre-line; }
 
   /* Пагинация НЕ через CSS columns (у WebKit при сотнях "страниц" там давно
@@ -142,43 +180,48 @@
     </div>
 
     <div class="screen" id="screen-library">
-      <div id="statsRow"></div>
-      <section>
-        <div class="folder-header">
-          <div class="folder-icon history">📖</div>
-          <div class="folder-text">
-            <div class="folder-title">Продолжить чтение</div>
-            <div class="folder-count" id="historyCount">0 книг</div>
-          </div>
+      <div id="libraryHome">
+        <div id="statsRow"></div>
+        <div class="folder-grid">
+          <button type="button" class="folder-card" data-folder="history">
+            <div class="folder-icon history">📖</div>
+            <div class="folder-text">
+              <div class="folder-title">Продолжить чтение</div>
+              <div class="folder-count" id="historyCount">0 книг</div>
+            </div>
+            <span class="folder-chevron">›</span>
+          </button>
+          <button type="button" class="folder-card" data-folder="bookmarks">
+            <div class="folder-icon bookmarks">🔖</div>
+            <div class="folder-text">
+              <div class="folder-title">Закладки</div>
+              <div class="folder-count" id="bookmarksCount">0 книг</div>
+            </div>
+            <span class="folder-chevron">›</span>
+          </button>
+          <button type="button" class="folder-card" data-folder="toread">
+            <div class="folder-icon toread">➕</div>
+            <div class="folder-text">
+              <div class="folder-title">Читать дальше</div>
+              <div class="folder-count" id="toReadCount">0 книг</div>
+            </div>
+            <span class="folder-chevron">›</span>
+          </button>
         </div>
-        <div id="historyGrid" class="grid"></div>
-        <div class="empty-hint" id="historyEmpty" hidden>Пока ничего не читала</div>
-      </section>
-      <section>
-        <div class="folder-header">
-          <div class="folder-icon bookmarks">🔖</div>
-          <div class="folder-text">
-            <div class="folder-title">Закладки</div>
-            <div class="folder-count" id="bookmarksCount">0 книг</div>
-          </div>
+        <button id="resetBtn" style="margin-top:26px;width:100%;padding:12px;border:none;border-radius:12px;background:rgba(255,70,70,0.12);color:#ff4757;font-size:14px;font-weight:600;">
+          🗑 Сбросить закладки и историю
+        </button>
+      </div>
+
+      <div id="libraryFolder">
+        <div class="folder-nav">
+          <button type="button" id="folderBack">← Назад</button>
+          <h2 id="folderHeading"></h2>
+          <button type="button" id="folderEdit">Изменить</button>
         </div>
-        <div id="bookmarksGrid" class="grid"></div>
-        <div class="empty-hint" id="bookmarksEmpty" hidden>Нет закладок</div>
-      </section>
-      <section>
-        <div class="folder-header">
-          <div class="folder-icon toread">➕</div>
-          <div class="folder-text">
-            <div class="folder-title">Читать дальше</div>
-            <div class="folder-count" id="toReadCount">0 книг</div>
-          </div>
-        </div>
-        <div id="toReadGrid" class="grid"></div>
-        <div class="empty-hint" id="toReadEmpty" hidden>Список пуст</div>
-      </section>
-      <button id="resetBtn" style="margin-top:26px;width:100%;padding:12px;border:none;border-radius:12px;background:rgba(255,70,70,0.12);color:#ff4757;font-size:14px;font-weight:600;">
-        🗑 Сбросить закладки и историю
-      </button>
+        <div id="folderGrid" class="grid"></div>
+        <div class="empty-hint" id="folderEmpty" hidden>Пока пусто</div>
+      </div>
     </div>
   </div>
 
@@ -190,15 +233,18 @@
 
 <div id="reader">
   <div id="readerToolbar">
-    <button id="backBtn">←</button>
-    <button id="bookmarkBtn">🔖</button>
-    <button id="toReadBtn">➕</button>
+    <button id="backBtn" title="Закрыть книгу">←</button>
+    <button id="bookmarkBtn" title="Закладка">🔖</button>
+    <button id="toReadBtn" title="Читать дальше">➕</button>
     <span id="readerTitle"></span>
     <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
-    <button class="fsz" id="autoBtn" title="Автопрокрутка">▶️</button>
-    <button class="fsz" id="smaller">A-</button>
-    <button class="fsz" id="bigger">A+</button>
+    <button class="fsz" id="autoBtn" title="Старт / пауза автопрокрутки">▶️</button>
+    <button class="fsz" id="speedBtn" title="Скорость автопрокрутки">1×</button>
+    <button class="fsz" id="smaller" title="Мельче">A-</button>
+    <button class="fsz" id="bigger" title="Крупнее">A+</button>
+    <button class="fsz" id="hideChromeBtn" title="Спрятать панель">⌃</button>
   </div>
+  <button type="button" id="chromePeek">настройки ▾</button>
   <div id="status">Загрузка…</div>
   <div id="pager" style="display:none">
     <div id="columns"></div>
@@ -217,8 +263,15 @@ const params = new URLSearchParams(location.search);
 const startParam = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
 const directBookId = params.get('book') || startParam || null;
 
+const FOLDER_META = {
+  history: { title: 'Продолжить чтение', empty: 'Пока ничего не читала', path: 'history' },
+  bookmarks: { title: 'Закладки', empty: 'Нет закладок', path: 'bookmark' },
+  toread: { title: 'Читать дальше', empty: 'Список пуст', path: 'to-read' },
+};
+
 /* ---------------- helpers ---------------- */
-function bookCard(b) {
+function bookCard(b, opts) {
+  opts = opts || {};
   const el = document.createElement('button');
   el.className = 'card';
   el.style.cssText = 'border:none;background:none;padding:0;color:inherit;';
@@ -232,15 +285,31 @@ function bookCard(b) {
     <div class="t">${escapeHtml(b.title || '')}</div>
     <div class="a">${escapeHtml(b.author || '')}</div>
   `;
-  el.addEventListener('click', () => openReader(b.id));
+  if (opts.editable) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'card-del';
+    del.setAttribute('aria-label', 'Удалить');
+    del.textContent = '×';
+    del.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (opts.onRemove) opts.onRemove(b);
+    });
+    el.querySelector('.cover').appendChild(del);
+  }
+  el.addEventListener('click', () => {
+    if (opts.editable) return;
+    openReader(b.id);
+  });
   return el;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 }
-function renderGrid(container, items) {
+function renderGrid(container, items, opts) {
   container.innerHTML = '';
-  items.forEach(b => container.appendChild(bookCard(b)));
+  items.forEach(b => container.appendChild(bookCard(b, opts)));
 }
 function pluralBooks(n) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -259,7 +328,10 @@ document.querySelectorAll('#tabbar button').forEach(btn => {
 function switchTab(name) {
   document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
-  if (name === 'library') loadLibrary();
+  if (name === 'library') {
+    closeFolder();
+    loadLibrary();
+  }
 }
 
 /* ---------------- search ---------------- */
@@ -293,28 +365,98 @@ async function runSearch(q) {
 }
 
 /* ---------------- library ---------------- */
+let libraryData = { history: [], bookmarks: [], to_read: [] };
+let currentFolder = null;
+let folderEditMode = false;
+
+function folderItems(key) {
+  if (key === 'history') return libraryData.history;
+  if (key === 'bookmarks') return libraryData.bookmarks;
+  return libraryData.to_read;
+}
+
+function updateFolderCounts() {
+  document.getElementById('historyCount').textContent = pluralBooks(libraryData.history.length);
+  document.getElementById('bookmarksCount').textContent = pluralBooks(libraryData.bookmarks.length);
+  document.getElementById('toReadCount').textContent = pluralBooks(libraryData.to_read.length);
+}
+
 async function loadLibrary() {
   if (!userId) return;
   try {
     const res = await fetch(`/api/library/${userId}/overview`);
     const data = await res.json();
+    libraryData = {
+      history: data.history || [],
+      bookmarks: data.bookmarks || [],
+      to_read: data.to_read || [],
+    };
     const s = data.stats;
     document.getElementById('statsRow').innerHTML = `
       <div class="stat"><b>${s.books_opened}</b><span>открыто</span></div>
       <div class="stat"><b>${s.books_finished}</b><span>дочитано</span></div>
       <div class="stat"><b>${s.bookmarks_count}</b><span>закладок</span></div>
     `;
-    renderGrid(document.getElementById('historyGrid'), data.history);
-    document.getElementById('historyEmpty').hidden = data.history.length > 0;
-    document.getElementById('historyCount').textContent = pluralBooks(data.history.length);
-    renderGrid(document.getElementById('bookmarksGrid'), data.bookmarks);
-    document.getElementById('bookmarksEmpty').hidden = data.bookmarks.length > 0;
-    document.getElementById('bookmarksCount').textContent = pluralBooks(data.bookmarks.length);
-    renderGrid(document.getElementById('toReadGrid'), data.to_read);
-    document.getElementById('toReadEmpty').hidden = data.to_read.length > 0;
-    document.getElementById('toReadCount').textContent = pluralBooks(data.to_read.length);
+    updateFolderCounts();
+    if (currentFolder) renderFolder();
   } catch (e) { /* тихо */ }
 }
+
+function openFolder(key) {
+  currentFolder = key;
+  folderEditMode = false;
+  document.getElementById('libraryHome').classList.add('hidden');
+  document.getElementById('libraryFolder').classList.add('open');
+  document.getElementById('folderHeading').textContent = FOLDER_META[key].title;
+  document.getElementById('folderEdit').textContent = 'Изменить';
+  document.getElementById('folderEdit').classList.remove('on');
+  renderFolder();
+}
+function closeFolder() {
+  currentFolder = null;
+  folderEditMode = false;
+  document.getElementById('libraryHome').classList.remove('hidden');
+  document.getElementById('libraryFolder').classList.remove('open');
+}
+function renderFolder() {
+  if (!currentFolder) return;
+  const items = folderItems(currentFolder);
+  const empty = document.getElementById('folderEmpty');
+  empty.hidden = items.length > 0;
+  empty.textContent = FOLDER_META[currentFolder].empty;
+  renderGrid(document.getElementById('folderGrid'), items, {
+    editable: folderEditMode,
+    onRemove: removeFromFolder,
+  });
+}
+
+async function removeFromFolder(book) {
+  if (!userId || !currentFolder) return;
+  const path = FOLDER_META[currentFolder].path;
+  try {
+    await fetch(`/api/library/${userId}/${path}/${book.id}`, { method: 'DELETE' });
+    const list = folderItems(currentFolder);
+    const idx = list.findIndex(x => x.id === book.id);
+    if (idx >= 0) list.splice(idx, 1);
+    updateFolderCounts();
+    renderFolder();
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) { /* тихо */ }
+}
+
+document.querySelectorAll('.folder-card').forEach(btn => {
+  btn.addEventListener('click', () => openFolder(btn.dataset.folder));
+});
+document.getElementById('folderBack').addEventListener('click', () => {
+  closeFolder();
+  loadLibrary();
+});
+document.getElementById('folderEdit').addEventListener('click', () => {
+  folderEditMode = !folderEditMode;
+  document.getElementById('folderEdit').textContent = folderEditMode ? 'Готово' : 'Изменить';
+  document.getElementById('folderEdit').classList.toggle('on', folderEditMode);
+  renderFolder();
+});
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   const warning = 'Все закладки, список "читать дальше" и история чтения будут удалены без возможности восстановить. Продолжить?';
@@ -348,10 +490,23 @@ let isBookmarked = false, isToRead = false;
 let readerMode = 'paged'; // 'paged' | 'scroll'
 try { readerMode = localStorage.getItem('reader_mode') || 'paged'; } catch (e) {}
 
+const SPEED_STEPS = [15, 28, 42, 60];
+const SPEED_LABELS = ['1×', '2×', '3×', '4×'];
+let autoScrollSpeed = 28;
+try {
+  const savedSpeed = parseInt(localStorage.getItem('auto_scroll_speed') || '', 10);
+  if (SPEED_STEPS.includes(savedSpeed)) autoScrollSpeed = savedSpeed;
+} catch (e) {}
+
 const modeBtn = document.getElementById('modeBtn');
+const speedBtn = document.getElementById('speedBtn');
 function applyMode() {
   pagerEl.classList.toggle('scroll-mode', readerMode === 'scroll');
   modeBtn.textContent = readerMode === 'paged' ? '📖' : '📜';
+}
+function applySpeedLabel() {
+  const i = Math.max(0, SPEED_STEPS.indexOf(autoScrollSpeed));
+  speedBtn.textContent = SPEED_LABELS[i] || '2×';
 }
 modeBtn.addEventListener('click', () => {
   readerMode = readerMode === 'paged' ? 'scroll' : 'paged';
@@ -359,6 +514,25 @@ modeBtn.addEventListener('click', () => {
   applyMode();
   if (readerMode === 'paged') requestAnimationFrame(recalcPages);
 });
+speedBtn.addEventListener('click', () => {
+  const i = SPEED_STEPS.indexOf(autoScrollSpeed);
+  autoScrollSpeed = SPEED_STEPS[(i + 1) % SPEED_STEPS.length];
+  try { localStorage.setItem('auto_scroll_speed', String(autoScrollSpeed)); } catch (e) {}
+  applySpeedLabel();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+});
+
+function setChrome(on) {
+  readerEl.classList.toggle('chrome-hidden', !on);
+  requestAnimationFrame(() => {
+    if (readerEl.classList.contains('active') && readerMode === 'paged' && pagerEl.style.display !== 'none') {
+      recalcPages();
+    }
+  });
+}
+function toggleChrome() { setChrome(readerEl.classList.contains('chrome-hidden')); }
+document.getElementById('hideChromeBtn').addEventListener('click', () => setChrome(false));
+document.getElementById('chromePeek').addEventListener('click', () => setChrome(true));
 
 function applyFont() { document.documentElement.style.setProperty('--font-size', fontSize + 'px'); }
 function saveFont() { try { localStorage.setItem('reader_font_size', String(fontSize)); } catch (e) {} }
@@ -405,6 +579,7 @@ pagerEl.addEventListener('touchend', e => {
     const w = pagerEl.clientWidth;
     if (endX < w * 0.25) prevPage();
     else if (endX > w * 0.75) nextPage();
+    else toggleChrome();
   }
   touchStartX = null;
 }, { passive: true });
@@ -453,6 +628,7 @@ async function openReader(bookId) {
   currentBookId = bookId;
   currentPage = 0;
   readerEl.classList.add('active');
+  setChrome(true);
   statusEl.style.display = 'block';
   pagerEl.style.display = 'none';
   statusEl.textContent = 'Загрузка…\nПри первом открытии книги может занять до минуты.';
@@ -491,6 +667,10 @@ async function openReader(bookId) {
         const savedPage = restorePosition(bookId);
         pagerEl.scrollTop = (savedPage / Math.max(1, totalPages - 1)) * (columnsEl.scrollHeight - pagerEl.clientHeight);
       }
+      // панель прячем через секунду, чтобы не торчала поверх текста
+      setTimeout(() => {
+        if (currentBookId === bookId && readerEl.classList.contains('active')) setChrome(false);
+      }, 1200);
     });
   } catch (e) {
     statusEl.textContent = 'Не удалось загрузить книгу 😕\n' + e.message;
@@ -499,7 +679,6 @@ async function openReader(bookId) {
 // ---------------- автопрокрутка (текст сам ползёт вниз) ----------------
 const autoBtn = document.getElementById('autoBtn');
 let autoScrollRAF = null;
-let autoScrollSpeed = 28; // px/сек, комфортный темп для чтения
 
 function stopAutoScroll() {
   if (autoScrollRAF) cancelAnimationFrame(autoScrollRAF);
@@ -535,30 +714,18 @@ function startAutoScroll() {
     begin();
   }
 }
-autoBtn.addEventListener('click', () => { autoScrollRAF ? stopAutoScroll() : startAutoScroll(); });
-// долгий тап — ускорить/замедлить (переключение по кругу); короткий тап —
-// включить/выключить. Обрабатываем через touchend (не полагаясь только на
-// синтетический click — на некоторых устройствах он не срабатывает надёжно
-// сразу после touch), preventDefault гасит дублирующий click.
-let autoBtnPressTimer = null;
-let autoBtnLongPressed = false;
-autoBtn.addEventListener('touchstart', () => {
-  autoBtnLongPressed = false;
-  autoBtnPressTimer = setTimeout(() => {
-    autoBtnLongPressed = true;
-    autoScrollSpeed = autoScrollSpeed >= 60 ? 15 : autoScrollSpeed + 15;
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-  }, 500);
-}, { passive: true });
+let autoTouchHandled = false;
 autoBtn.addEventListener('touchend', (e) => {
-  clearTimeout(autoBtnPressTimer);
-  if (!autoBtnLongPressed) {
-    e.preventDefault();
-    autoScrollRAF ? stopAutoScroll() : startAutoScroll();
-  }
+  e.preventDefault();
+  autoTouchHandled = true;
+  autoScrollRAF ? stopAutoScroll() : startAutoScroll();
 }, { passive: false });
+autoBtn.addEventListener('click', () => {
+  if (autoTouchHandled) { autoTouchHandled = false; return; }
+  autoScrollRAF ? stopAutoScroll() : startAutoScroll();
+});
 
-function closeReader() { stopAutoScroll(); readerEl.classList.remove('active'); currentBookId = null; }
+function closeReader() { stopAutoScroll(); setChrome(true); readerEl.classList.remove('active'); currentBookId = null; }
 document.getElementById('backBtn').addEventListener('click', closeReader);
 
 bookmarkBtn.addEventListener('click', async () => {
@@ -580,6 +747,7 @@ toReadBtn.addEventListener('click', async () => {
 
 /* ---------------- init ---------------- */
 restoreFont();
+applySpeedLabel();
 if (directBookId) {
   openReader(directBookId);
 } else {
