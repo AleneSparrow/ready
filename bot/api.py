@@ -118,7 +118,7 @@ def _recs_from_history(user_id: int, limit: int) -> list:
 @app.get("/api/recommendations/{user_id}")
 def api_recommendations(user_id: int, limit: int = 9):
     """Короткая лента на главной: похожие на недавно читаемые."""
-    return _recs_from_history(user_id, min(max(int(limit), 1), 12))
+    return _recs_from_history(user_id, min(max(int(limit), 1), 48))
 
 
 @app.get("/api/recommendations/{user_id}/by-books")
