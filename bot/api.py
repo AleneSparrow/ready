@@ -52,6 +52,16 @@ def api_debug_disk():
     }
 
 
+@app.post("/api/_debug/clear_cache")
+def api_debug_clear_cache():
+    from . import cache_utils
+
+    freed = 0
+    for sub in ("archives", "books", "cover_archives", "covers"):
+        freed += cache_utils.clear_dir(os.path.join(config.CACHE_DIR, sub))
+    return {"freed_bytes": freed}
+
+
 @app.get("/api/search")
 def api_search(q: str):
     results = catalog.search(q)

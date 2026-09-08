@@ -9,15 +9,22 @@ from .gdrive import download_file
 ARCHIVE_CACHE_DIR = os.path.join(config.CACHE_DIR, "archives")
 BOOK_CACHE_DIR = os.path.join(config.CACHE_DIR, "books")
 
-# архивы книг бывают под ~400 МБ — не даём кэшу архивов расти бесконечно
-ARCHIVE_CACHE_MAX_BYTES = 2 * 1024**3
-BOOK_CACHE_MAX_BYTES = 500 * 1024**2
+# архивы книг бывают под ~400 МБ — не даём кэшу архивов расти бесконечно.
+# Лимиты держим с запасом: несколько загрузок могут идти параллельно.
+ARCHIVE_CACHE_MAX_BYTES = 1024**3
+BOOK_CACHE_MAX_BYTES = 300 * 1024**2
 
 
 def _ensure_archive(archive_name: str) -> str:
     local_path = os.path.join(ARCHIVE_CACHE_DIR, archive_name)
-    if not os.path.exists(local_path):
-        os.makedirs(ARCHIVE_CACHE_DIR, exist_ok=True)
+    if os.path.exists(local_path):
+        return local_path
+    os.makedirs(ARCHIVE_CACHE_DIR, exist_ok=True)
+    # лок на всю проверку+запись — иначе параллельные запросы одновременно
+    # решат, что место есть, и суммарно пробьют лимit
+    with cache_utils.lock_for(ARCHIVE_CACHE_DIR):
+        if os.path.exists(local_path):
+            return local_path
         cache_utils.ensure_space(ARCHIVE_CACHE_DIR, ARCHIVE_CACHE_MAX_BYTES)
         download_file(archive_name, local_path, config.GDRIVE_LIBRARY_FOLDER_ID)
     return local_path
