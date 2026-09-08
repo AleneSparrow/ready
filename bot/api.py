@@ -199,4 +199,15 @@ def api_library_overview(user_id: int):
     return {"stats": stats, "bookmarks": bookmarks, "to_read": to_read, "history": history}
 
 
+@app.get("/app/index.html")
+def api_webapp_index():
+    with open("webapp/index.html", "rb") as f:
+        content = f.read()
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
 app.mount("/app", StaticFiles(directory="webapp", html=True), name="webapp")

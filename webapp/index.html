@@ -108,19 +108,24 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; white-space: pre-line; }
 
-  #pager { position: relative; flex: 1; overflow: hidden; }
+  /* Пагинация НЕ через CSS columns (у WebKit при сотнях "страниц" там давно
+     известные баги с наездом текста/пропажей страниц) — а обычным вертикальным
+     скроллом, который мы либо листаем программно по экрану (paged), либо
+     отдаём как есть браузеру (scroll/лента). */
+  #pager { position: relative; flex: 1; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+  #pager.scroll-mode { overflow-y: auto; }
   #columns {
-    height: 100%; columns: 1; column-gap: 0; column-fill: auto; overflow: hidden;
-    padding: 4px 20px 24px; line-height: 1.65; font-size: var(--font-size);
-    transition: transform 0.25s ease; will-change: transform;
+    padding: 4px 20px 40px; line-height: 1.65; font-size: var(--font-size);
   }
   #columns p { margin: 0 0 1em; text-align: justify; }
-  #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; break-after: avoid; }
+  #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; }
   hr { border: none; border-top: 1px solid rgba(127,127,127,0.25); margin: 2.5em 0; }
   #tap-prev, #tap-next { position: absolute; top: 0; bottom: 0; width: 25%; z-index: 5; }
   #tap-prev { left: 0; } #tap-next { right: 0; }
+  #pager.scroll-mode #tap-prev, #pager.scroll-mode #tap-next { display: none; }
   #pageIndicator { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
-    font-size: 12px; opacity: 0.5; pointer-events: none; }
+    font-size: 12px; opacity: 0.5; pointer-events: none; background: var(--tg-theme-bg-color, #fff); }
+  #pager.scroll-mode #pageIndicator { display: none; }
 </style>
 </head>
 <body>
@@ -185,6 +190,7 @@
     <button id="bookmarkBtn">🔖</button>
     <button id="toReadBtn">➕</button>
     <span id="readerTitle"></span>
+    <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
     <button class="fsz" id="smaller">A-</button>
     <button class="fsz" id="bigger">A+</button>
   </div>
@@ -331,9 +337,23 @@ const bookmarkBtn = document.getElementById('bookmarkBtn');
 const toReadBtn = document.getElementById('toReadBtn');
 
 let fontSize = 17;
-let pageWidth = 0, totalPages = 1, currentPage = 0;
+let pageHeight = 0, totalPages = 1, currentPage = 0;
 let currentBookId = null;
 let isBookmarked = false, isToRead = false;
+let readerMode = 'paged'; // 'paged' | 'scroll'
+try { readerMode = localStorage.getItem('reader_mode') || 'paged'; } catch (e) {}
+
+const modeBtn = document.getElementById('modeBtn');
+function applyMode() {
+  pagerEl.classList.toggle('scroll-mode', readerMode === 'scroll');
+  modeBtn.textContent = readerMode === 'paged' ? '📖' : '📜';
+}
+modeBtn.addEventListener('click', () => {
+  readerMode = readerMode === 'paged' ? 'scroll' : 'paged';
+  try { localStorage.setItem('reader_mode', readerMode); } catch (e) {}
+  applyMode();
+  if (readerMode === 'paged') requestAnimationFrame(recalcPages);
+});
 
 function applyFont() { document.documentElement.style.setProperty('--font-size', fontSize + 'px'); }
 function saveFont() { try { localStorage.setItem('reader_font_size', String(fontSize)); } catch (e) {} }
@@ -344,27 +364,28 @@ function restoreFont() {
 document.getElementById('bigger').onclick = () => { fontSize = Math.min(fontSize + 1, 28); applyFont(); saveFont(); requestAnimationFrame(recalcPages); };
 document.getElementById('smaller').onclick = () => { fontSize = Math.max(fontSize - 1, 13); applyFont(); saveFont(); requestAnimationFrame(recalcPages); };
 
+// Пагинация НЕ через CSS columns (у WebKit баги при сотнях "страниц"), а
+// обычным вертикальным скроллом контейнера — либо листаем программно по
+// экрану за раз (paged), либо просто отдаём скролл браузеру (лента).
 function recalcPages() {
-  pageWidth = pagerEl.clientWidth;
-  columnsEl.style.width = pageWidth + 'px';
-  columnsEl.style.columnWidth = pageWidth + 'px';
-  totalPages = Math.max(1, Math.round(columnsEl.scrollWidth / pageWidth));
+  pageHeight = pagerEl.clientHeight;
+  totalPages = Math.max(1, Math.round(columnsEl.scrollHeight / pageHeight));
   goToPage(Math.min(currentPage, totalPages - 1));
 }
 function goToPage(n) {
   currentPage = Math.max(0, Math.min(n, totalPages - 1));
-  columnsEl.style.transform = `translateX(${-currentPage * pageWidth}px)`;
+  pagerEl.scrollTop = currentPage * pageHeight;
   indicatorEl.textContent = `${currentPage + 1} / ${totalPages}`;
   saveProgress();
 }
-function nextPage() { goToPage(currentPage + 1); }
-function prevPage() { goToPage(currentPage - 1); }
+function nextPage() { if (readerMode === 'paged') goToPage(currentPage + 1); }
+function prevPage() { if (readerMode === 'paged') goToPage(currentPage - 1); }
 document.getElementById('tap-next').addEventListener('click', nextPage);
 document.getElementById('tap-prev').addEventListener('click', prevPage);
 let touchStartX = null;
 pagerEl.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
 pagerEl.addEventListener('touchend', e => {
-  if (touchStartX === null) return;
+  if (touchStartX === null || readerMode !== 'paged') { touchStartX = null; return; }
   const dx = e.changedTouches[0].clientX - touchStartX;
   if (Math.abs(dx) > 40) { dx < 0 ? nextPage() : prevPage(); }
   touchStartX = null;
@@ -374,7 +395,19 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') nextPage();
   if (e.key === 'ArrowLeft') prevPage();
 });
-window.addEventListener('resize', () => { if (readerEl.classList.contains('active')) requestAnimationFrame(recalcPages); });
+window.addEventListener('resize', () => { if (readerEl.classList.contains('active') && readerMode === 'paged') requestAnimationFrame(recalcPages); });
+
+// в режиме ленты сохраняем позицию по проценту скролла
+let scrollSaveTimer = null;
+pagerEl.addEventListener('scroll', () => {
+  if (readerMode !== 'scroll' || !currentBookId) return;
+  clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = setTimeout(() => {
+    const frac = pagerEl.scrollTop / Math.max(1, columnsEl.scrollHeight - pagerEl.clientHeight);
+    currentPage = Math.round(frac * (totalPages - 1));
+    saveProgress();
+  }, 500);
+}, { passive: true });
 
 function positionKey(id) { return 'page_' + id; }
 let progressTimer = null;
@@ -425,7 +458,18 @@ async function openReader(bookId) {
     columnsEl.innerHTML = data.chapters.map(c => c.html).join('<hr/>');
     statusEl.style.display = 'none';
     pagerEl.style.display = 'block';
-    requestAnimationFrame(() => { recalcPages(); goToPage(restorePosition(bookId)); });
+    applyMode();
+    requestAnimationFrame(() => {
+      if (readerMode === 'paged') {
+        recalcPages();
+        goToPage(restorePosition(bookId));
+      } else {
+        pageHeight = pagerEl.clientHeight;
+        totalPages = Math.max(1, Math.round(columnsEl.scrollHeight / pageHeight));
+        const savedPage = restorePosition(bookId);
+        pagerEl.scrollTop = (savedPage / Math.max(1, totalPages - 1)) * (columnsEl.scrollHeight - pagerEl.clientHeight);
+      }
+    });
   } catch (e) {
     statusEl.textContent = 'Не удалось загрузить книгу 😕\n' + e.message;
   }
