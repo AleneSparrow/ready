@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+aiogram==3.13.1
+py7zr==0.22.0
+lxml==5.3.0
+ebooklib==0.18
+python-dotenv==1.0.1
