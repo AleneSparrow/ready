@@ -62,52 +62,80 @@ def api_debug_clear_cache():
     return {"freed_bytes": freed}
 
 
-@app.get("/api/popular")
-def api_popular():
-    ids = library.popular_book_ids(24)
+def _popular_items(limit: int) -> list:
+    limit = min(max(int(limit), 1), 90)
+    ids = library.popular_book_ids(limit)
     items = [b for b in (_brief(i) for i in ids) if b]
-    if len(items) < 16:
-        have = {b["id"] for b in items}
-        for row in catalog.popular(24):
+    have = {b["id"] for b in items}
+    if len(items) < limit:
+        for row in catalog.popular(limit):
             if row.id in have:
                 continue
             brief = _brief(row.id)
-            if brief:
-                items.append(brief)
-                have.add(row.id)
-            if len(items) >= 24:
+            if not brief:
+                continue
+            items.append(brief)
+            have.add(row.id)
+            if len(items) >= limit:
                 break
-    return items[:24]
+    return items[:limit]
+
+
+@app.get("/api/popular")
+def api_popular(limit: int = 9):
+    return _popular_items(limit)
+
+
+def _recs_from_history(user_id: int, limit: int) -> list:
+    items = []
+    have: set[int] = set()
+    for entry in library.get_history(user_id, limit=10):
+        have.add(entry["book_id"])
+        for row in catalog.similar_books(entry["book_id"], limit=6):
+            if row.id in have:
+                continue
+            brief = _brief(row.id)
+            if not brief:
+                continue
+            items.append(brief)
+            have.add(row.id)
+            if len(items) >= limit:
+                return items
+    if len(items) < limit:
+        for row in catalog.popular(limit):
+            if row.id in have:
+                continue
+            brief = _brief(row.id)
+            if not brief:
+                continue
+            items.append(brief)
+            have.add(row.id)
+            if len(items) >= limit:
+                break
+    return items[:limit]
 
 
 @app.get("/api/recommendations/{user_id}")
-def api_recommendations(user_id: int):
-    """Подборка по названиям своих папок; если папок нет — популярное."""
-    items = []
-    have: set[int] = set()
-    for folder in library.list_folders(user_id):
-        for row in catalog.search(folder["name"], limit=5):
-            if row.id in have:
-                continue
+def api_recommendations(user_id: int, limit: int = 9):
+    """Короткая лента на главной: похожие на недавно читаемые."""
+    return _recs_from_history(user_id, min(max(int(limit), 1), 12))
+
+
+@app.get("/api/recommendations/{user_id}/by-books")
+def api_recommendations_by_books(user_id: int):
+    """По 6 похожих на каждую книгу из «читать дальше» / истории."""
+    groups = []
+    for entry in library.get_history(user_id, limit=8):
+        src = _brief(entry["book_id"])
+        if not src:
+            continue
+        sims = []
+        for row in catalog.similar_books(entry["book_id"], limit=6):
             brief = _brief(row.id)
-            if not brief:
-                continue
-            items.append(brief)
-            have.add(row.id)
-            if len(items) >= 12:
-                return items
-    if len(items) < 8:
-        for row in catalog.popular(12):
-            if row.id in have:
-                continue
-            brief = _brief(row.id)
-            if not brief:
-                continue
-            items.append(brief)
-            have.add(row.id)
-            if len(items) >= 12:
-                break
-    return items
+            if brief:
+                sims.append(brief)
+        groups.append({"book": src, "items": sims})
+    return {"groups": groups}
 
 
 @app.get("/api/search")

@@ -4,93 +4,180 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-home-heart-play-20260908 -->
+<!-- rb-square-tiles-lib-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
+  :root {
+    color-scheme: dark;
+    --font-size: 17px;
+    --bg: #050a1c;
+    --bg-2: #0b1433;
+    --text: #eef4ff;
+    --muted: #8aa0c8;
+    --neon: #4fc3ff;
+    --pink: #ff4d9a;
+    --yellow: #ffe14a;
+    --accent: #4fc3ff;
+  }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--tg-theme-bg-color, #ffffff);
-    color: var(--tg-theme-text-color, #111111);
+    background: var(--bg);
+    color: var(--text);
   }
-  button { font-family: inherit; cursor: pointer; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  #bgfx {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(79,195,255,0.22), transparent 55%),
+                radial-gradient(900px 500px at 110% 10%, rgba(255,77,154,0.18), transparent 50%),
+                radial-gradient(800px 500px at 50% 120%, rgba(255,225,74,0.12), transparent 50%),
+                var(--bg);
+  }
+  #bgfx::before, #bgfx::after {
+    content: ""; position: absolute; border-radius: 50%; filter: blur(70px);
+    animation: drift 14s ease-in-out infinite;
+  }
+  #bgfx::before {
+    width: 280px; height: 280px; left: -60px; top: 18%;
+    background: rgba(79,195,255,0.45);
+  }
+  #bgfx::after {
+    width: 240px; height: 240px; right: -40px; bottom: 22%;
+    background: rgba(255,77,154,0.4);
+    animation-delay: -6s;
+  }
+  @keyframes drift {
+    0%, 100% { transform: translate(0,0) scale(1); }
+    50% { transform: translate(30px,-24px) scale(1.15); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px) scale(0.96); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glow {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(79,195,255,0.6)); }
+    50% { filter: drop-shadow(0 0 16px rgba(255,77,154,0.8)); }
+  }
+  @keyframes sheen {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 100% 50%; }
+  }
 
-  /* ---------- layout ---------- */
-  #app { display: flex; flex-direction: column; height: 100%; }
+  #app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; }
   #screens { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 14px 78px; }
   .screen { display: none; padding: 0 0 8px; }
   .screen.active { display: block; }
   #searchBar {
     position: sticky; top: 0; z-index: 15;
-    padding: 12px 0 10px;
-    background: var(--tg-theme-bg-color, #ffffff);
+    padding: 12px 0 12px;
+    background: linear-gradient(180deg, rgba(5,10,28,0.96), rgba(5,10,28,0.78) 70%, transparent);
   }
 
   #tabbar {
     position: fixed; bottom: 0; left: 0; right: 0;
     display: flex;
-    background: var(--tg-theme-secondary-bg-color, #f4f4f5);
-    border-top: 1px solid rgba(127,127,127,0.2);
+    background: rgba(8,14,40,0.86);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(79,195,255,0.35);
+    box-shadow: 0 -8px 30px rgba(79,195,255,0.12);
     padding-bottom: env(safe-area-inset-bottom);
     z-index: 20;
   }
   #tabbar button {
     flex: 1; border: none; background: none; padding: 8px 0 6px;
-    font-size: 11px; color: var(--tg-theme-hint-color, #888);
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    color: var(--muted);
     display: flex; flex-direction: column; align-items: center; gap: 1px;
   }
   #tabbar button .icon { font-size: 26px; line-height: 1; }
-  #tabbar button.active { color: #e03131; }
+  #homeTab { color: var(--neon); }
+  #homeTab .icon { filter: drop-shadow(0 0 8px rgba(79,195,255,0.7)); animation: glow 3.2s ease-in-out infinite; }
+  #playTab { color: var(--yellow); }
+  #playTab .icon { font-size: 30px; animation-delay: -1s; filter: drop-shadow(0 0 10px rgba(255,225,74,0.85)); animation: glow 3.2s ease-in-out infinite; }
+  #heartTab { color: var(--pink); }
+  #heartTab .icon { filter: drop-shadow(0 0 8px rgba(255,77,154,0.7)); animation: glow 3.2s ease-in-out infinite; }
+  #homeTab.active { color: var(--neon); }
+  #libTab { color: var(--neon); }
+  #libTab .icon { filter: drop-shadow(0 0 8px rgba(79,195,255,0.75)); animation: glow 3.2s ease-in-out infinite; animation-delay: -2s; }
+  #libTab.active { color: var(--yellow); }
 
-  /* ---------- search ---------- */
   #searchInput {
-    width: 100%; height: 44px; padding: 0 16px; border-radius: 16px; border: none;
-    background: var(--tg-theme-secondary-bg-color, #f0f0f2);
-    color: inherit; font-size: 16px;
-    box-shadow: inset 0 0 0 1px rgba(127,127,127,0.12);
+    width: 100%; height: 46px; padding: 0 16px; border-radius: 16px; border: none;
+    background: rgba(12,22,56,0.85);
+    color: var(--text); font-size: 16px;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.35), 0 0 18px rgba(79,195,255,0.18);
+    transition: box-shadow 0.25s;
   }
-  #searchInput:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
-  #searchHint { text-align: center; opacity: 0.5; padding: 40px 20px; font-size: 14px; }
-  .section-head { font-size: 17px; font-weight: 800; margin: 18px 2px 10px; }
-  #continueGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; }
+  #searchInput::placeholder { color: #7f95c2; }
+  #searchInput:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--yellow), 0 0 24px rgba(255,225,74,0.25), 0 0 18px rgba(79,195,255,0.35);
+  }
+  #searchHint { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+  .section-head {
+    font-size: 18px; font-weight: 800; margin: 20px 2px 12px;
+    background: linear-gradient(90deg, var(--neon), var(--pink), var(--yellow), var(--neon));
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: sheen 6s linear infinite;
+  }
+  #continueGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    gap: 14px 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 8px;
   }
-  .card { display: flex; flex-direction: column; text-align: left; width: 100%; min-width: 0; }
+  .card {
+    display: flex; flex-direction: column; text-align: left; width: 100%; min-width: 0;
+    animation: rise 0.55s ease both;
+  }
+  .grid .card:nth-child(2) { animation-delay: .04s; } .grid .card:nth-child(3) { animation-delay: .08s; }
+  .grid .card:nth-child(4) { animation-delay: .12s; } .grid .card:nth-child(5) { animation-delay: .16s; }
+  .grid .card:nth-child(6) { animation-delay: .2s; } .grid .card:nth-child(7) { animation-delay: .24s; }
+  .grid .card:nth-child(8) { animation-delay: .28s; }
   .cover {
-    width: 100%; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden;
-    background: linear-gradient(135deg, #7f7fd5, #86a8e7 50%, #91eae4);
+    width: 100%; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(160deg, #1b3b8a, #6a1b6b 55%, #c9a227);
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.4), 0 10px 24px rgba(0,0,0,0.45), 0 0 16px rgba(79,195,255,0.22);
     position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card:active .cover {
+    transform: scale(0.96);
+    box-shadow: 0 0 0 1px var(--yellow), 0 0 22px rgba(255,225,74,0.35);
   }
   .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .cover .fallback { color: #fff; font-size: 30px; opacity: 0.85; padding: 6px; text-align: center; }
-  .card .t { font-size: 13px; font-weight: 600; margin-top: 6px; line-height: 1.25;
-    overflow-wrap: break-word; word-break: break-word; max-width: 100%; }
-  .card .a { font-size: 11.5px; opacity: 0.6; margin-top: 2px; max-width: 100%;
+  .card .t { font-size: 11.5px; font-weight: 700; margin-top: 5px; line-height: 1.2;
+    overflow-wrap: break-word; word-break: break-word; max-width: 100%; color: #f4f7ff;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .a { font-size: 10.5px; color: var(--muted); margin-top: 1px; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .badge { position: absolute; top: 5px; right: 5px; font-size: 13px;
-    background: rgba(0,0,0,0.45); border-radius: 6px; padding: 1px 4px; color: #fff; }
+  .card-like, .card-lib {
+    position: absolute; z-index: 4;
+    width: 24px; height: 24px; border: none; border-radius: 8px;
+    font-size: 12px; line-height: 24px; padding: 0;
+    background: rgba(5,10,28,0.72); color: #fff;
+    box-shadow: 0 0 8px rgba(79,195,255,0.35);
+  }
+  .card-like { top: 4px; right: 4px; }
+  .card-like.on { background: var(--pink); box-shadow: 0 0 12px rgba(255,77,154,0.75); }
+  .card-lib { top: 4px; left: 4px; font-size: 13px; }
+  .card-lib.on { background: var(--yellow); color: #1a1400; box-shadow: 0 0 12px rgba(255,225,74,0.6); }
+  .badge { position: absolute; bottom: 5px; right: 5px; font-size: 12px;
+    background: rgba(5,10,28,0.7); border-radius: 6px; padding: 1px 5px; color: var(--yellow);
+    box-shadow: 0 0 8px rgba(255,225,74,0.35); }
   .card-del {
-    position: absolute; top: 4px; left: 4px; z-index: 3;
+    position: absolute; top: 4px; left: 4px; z-index: 5;
     width: 26px; height: 26px; border: none; border-radius: 50%;
-    background: rgba(255,70,70,0.95); color: #fff; font-size: 18px; line-height: 26px;
-    padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    background: var(--pink); color: #fff; font-size: 18px; line-height: 26px;
+    padding: 0; box-shadow: 0 0 10px rgba(255,77,154,0.7);
   }
 
-  /* ---------- library ---------- */
-  #statsRow { display: flex; gap: 8px; margin-bottom: 18px; }
-  .stat { flex: 1; background: var(--tg-theme-secondary-bg-color, #f0f0f2); border-radius: 12px;
-    padding: 10px 8px; text-align: center; }
-  .stat b { display: block; font-size: 20px; }
-  .stat span { font-size: 11px; opacity: 0.6; }
-  .empty-hint { opacity: 0.5; font-size: 13px; padding: 24px 8px; text-align: center; }
+  .empty-hint { color: var(--muted); font-size: 13px; padding: 24px 8px; text-align: center; }
 
   .folder-grid {
     display: grid;
@@ -99,22 +186,27 @@
   }
   .folder-card {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 8px; width: 100%; min-height: 132px;
-    border: none; border-radius: 16px; padding: 16px 10px 14px; text-align: center;
-    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit;
+    gap: 8px; width: 100%;     min-height: 108px;
+    border: none; border-radius: 16px; padding: 12px 8px 10px; text-align: center;
+    background: rgba(14,24,64,0.72);
+    color: inherit;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.28), 0 0 16px rgba(255,77,154,0.12);
+    animation: rise 0.45s ease both;
+    transition: transform 0.2s;
   }
+  .folder-card:active { transform: scale(0.97); }
   .folder-icon {
     width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center; font-size: 28px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    box-shadow: 0 0 16px rgba(79,195,255,0.35);
   }
-  .folder-icon.history { background: linear-gradient(135deg,#ff9a56,#ff6a88); }
-  .folder-icon.bookmarks { background: linear-gradient(135deg,#f6d365,#fda085); }
-  .folder-icon.toread { background: linear-gradient(135deg,#43cea2,#185a9d); }
+  .folder-icon.history { background: linear-gradient(135deg, var(--yellow), var(--pink)); }
+  .folder-icon.bookmarks { background: linear-gradient(135deg, var(--pink), #7a1fff); }
+  .folder-icon.toread { background: linear-gradient(135deg, var(--neon), #2b5cff); }
   .folder-text { display: flex; flex-direction: column; align-items: center; min-width: 0; width: 100%; }
   .folder-title { font-size: 14px; font-weight: 700; line-height: 1.25;
     overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .folder-count { font-size: 12px; opacity: 0.55; margin-top: 2px; }
+  .folder-count { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .folder-chevron { display: none; }
 
   #libraryFolder { display: none; }
@@ -124,19 +216,20 @@
     display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
   }
   .folder-nav button {
-    border: none; background: var(--tg-theme-secondary-bg-color, #f0f0f2);
-    color: inherit; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600;
+    border: none; background: rgba(14,24,64,0.9);
+    color: inherit; border-radius: 12px; padding: 8px 12px; font-size: 14px; font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.3);
   }
   .folder-nav h2 { flex: 1; margin: 0; font-size: 17px; }
   .card-move {
     position: absolute; bottom: 4px; right: 4px; z-index: 3;
     width: 28px; height: 28px; border: none; border-radius: 8px;
-    background: rgba(36,129,204,0.95); color: #fff; font-size: 14px;
-    padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    background: var(--neon); color: #041018; font-size: 14px;
+    padding: 0; box-shadow: 0 0 10px rgba(79,195,255,0.7);
   }
-  .folder-icon.custom { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
+  .folder-icon.custom { background: linear-gradient(135deg, var(--neon), var(--pink)); }
   .folder-section-label {
-    font-size: 13px; font-weight: 700; opacity: 0.55; margin: 4px 2px 10px;
+    font-size: 13px; font-weight: 700; color: var(--muted); margin: 4px 2px 10px;
   }
   #nestedFolders { margin-bottom: 16px; }
   .pick-list {
@@ -152,39 +245,41 @@
     display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px;
   }
   .folder-actions button {
-    border: none; background: var(--tg-theme-secondary-bg-color, #f0f0f2);
-    color: inherit; border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600;
+    border: none; background: rgba(14,24,64,0.9);
+    color: inherit; border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.25);
   }
-  .folder-actions button.on { background: var(--accent); color: #fff; }
-  .folder-actions button.danger { color: #ff4757; background: rgba(255,70,70,0.12); }
+  .folder-actions button.on { background: var(--neon); color: #041018; }
+  .folder-actions button.danger { color: var(--pink); background: rgba(255,77,154,0.12); }
   #modalWrap {
     display: none; position: fixed; inset: 0; z-index: 80;
-    background: rgba(0,0,0,0.45); align-items: flex-end; justify-content: center;
+    background: rgba(2,6,20,0.72); align-items: flex-end; justify-content: center;
   }
   #modalWrap.open { display: flex; }
   .modal-sheet {
-    width: 100%; max-width: 480px; background: var(--tg-theme-bg-color, #fff);
-    border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    width: 100%; max-width: 480px; background: #0c1638;
+    border-radius: 20px 20px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.35), 0 -10px 40px rgba(255,77,154,0.15);
   }
   .modal-sheet h3 { margin: 0 0 12px; font-size: 16px; }
   .modal-sheet input {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: none;
-    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit; font-size: 16px;
+    width: 100%; padding: 10px 12px; border-radius: 12px; border: none;
+    background: #08102a; color: inherit; font-size: 16px;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.3);
   }
   .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
   .modal-actions button, .pick-item {
-    flex: 1; border: none; border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 600;
-    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit;
+    flex: 1; border: none; border-radius: 12px; padding: 12px; font-size: 15px; font-weight: 600;
+    background: #12204a; color: inherit;
   }
-  .modal-actions .ok { background: var(--accent); color: #fff; }
+  .modal-actions .ok { background: var(--yellow); color: #1a1400; }
 
-  /* ---------- reader ---------- */
-  #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
+  #reader { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: none; flex-direction: column; }
   #reader.active { display: flex; }
   #readerChrome {
     flex-shrink: 0;
-    background: var(--tg-theme-secondary-bg-color, #f4f4f5);
-    border-bottom: 1px solid rgba(0,0,0,0.08);
+    background: rgba(8,14,40,0.94);
+    border-bottom: 1px solid rgba(79,195,255,0.28);
   }
   #reader.chrome-hidden #readerChrome {
     height: 0; padding: 0; overflow: hidden; border: none; opacity: 0;
@@ -195,54 +290,52 @@
     width: 100%; gap: 0; padding: 4px 4px 8px;
   }
   #readerToolbar button {
-    border: none; background: none; font-size: 17px; padding: 8px 0; border-radius: 8px; color: inherit;
+    border: none; background: none; font-size: 17px; padding: 8px 0; border-radius: 10px; color: inherit;
     flex: 1; min-width: 0; text-align: center;
   }
-  #readerToolbar button.on { background: var(--accent); color: #fff; border-radius: 8px; }
-  #bookmarkBtn.on { background: #e03131; color: #fff; }
-  #readerToolbar .fsz { font-size: 13px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
+  #readerToolbar button.on { background: var(--neon); color: #041018; border-radius: 10px; }
+  #bookmarkBtn.on { background: var(--pink); color: #fff; box-shadow: 0 0 12px rgba(255,77,154,0.55); }
+  #readerToolbar .fsz { font-size: 13px; background: #12204a; border-radius: 10px; }
+  #autoBtn.on { background: var(--yellow); color: #1a1400; }
   #readerMeta { padding: 8px 12px 4px; }
   #readerTitle {
-    font-weight: 600; font-size: 14px; line-height: 1.3;
+    font-weight: 700; font-size: 14px; line-height: 1.3;
     text-align: left; white-space: normal; overflow: hidden;
     word-break: break-word;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+    color: var(--neon);
   }
-  #readerProgress { margin-top: 3px; font-size: 12px; opacity: 0.6; }
+  #readerProgress { margin-top: 3px; font-size: 12px; color: var(--yellow); opacity: 0.9; }
   #chromePeek {
     display: none; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
     z-index: 60; border: none; border-radius: 999px;
-    padding: 4px 12px; font-size: 12px; font-weight: 600;
-    background: rgba(0,0,0,0.45); color: #fff;
+    padding: 5px 14px; font-size: 12px; font-weight: 700;
+    background: rgba(8,14,40,0.8); color: var(--neon);
+    box-shadow: 0 0 14px rgba(79,195,255,0.4);
   }
   #reader.chrome-hidden #chromePeek { display: block; }
-  #status { padding: 60px 20px; text-align: center; opacity: 0.6; font-size: 15px; white-space: pre-line; }
+  #status { padding: 60px 20px; text-align: center; color: var(--muted); font-size: 15px; white-space: pre-line; }
 
-  /* Пагинация НЕ через CSS columns (у WebKit при сотнях "страниц" там давно
-     известные баги с наездом текста/пропажей страниц) — а обычным вертикальным
-     скроллом, который мы либо листаем программно по экрану (paged), либо
-     отдаём как есть браузеру (scroll/лента). */
-  /* overflow-y:hidden в paged-режиме принципиально — иначе WebKit пытается
-     ОДНОВРЕМЕННО со своей нативной инерцией скроллить контейнер, пока наш JS
-     позиционирует его через scrollTop, и текст дёргается туда-сюда */
   #pager { position: relative; flex: 1; overflow-y: hidden; overflow-x: hidden; touch-action: none; overscroll-behavior: none; }
   #pager.scroll-mode { overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
   #columns {
     padding: 4px 20px 40px; line-height: 1.65; font-size: var(--font-size);
     max-width: 100%; overflow-x: hidden; word-wrap: break-word;
+    color: #e7edff;
   }
   #columns p { margin: 0 0 1em; text-align: justify; }
-  #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; }
-  hr { border: none; border-top: 1px solid rgba(127,127,127,0.25); margin: 2.5em 0; }
+  #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; color: var(--yellow); }
+  hr { border: none; border-top: 1px solid rgba(79,195,255,0.2); margin: 2.5em 0; }
   #tap-prev, #tap-next { position: absolute; top: 0; bottom: 0; width: 25%; z-index: 5; }
   #tap-prev { left: 0; } #tap-next { right: 0; }
   #pager.scroll-mode #tap-prev, #pager.scroll-mode #tap-next { display: none; }
   #pageIndicator { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
-    font-size: 12px; opacity: 0.5; pointer-events: none; background: var(--tg-theme-bg-color, #fff); }
+    font-size: 12px; color: var(--muted); pointer-events: none; background: transparent; }
   #reader:not(.chrome-hidden) #pageIndicator { display: none; }
 </style>
 </head>
 <body>
+<div id="bgfx" aria-hidden="true"></div>
 <div id="app">
   <div id="screens">
     <div id="searchBar">
@@ -282,7 +375,7 @@
         <div class="folder-grid" id="nestedFolders" hidden></div>
         <div id="folderGrid" class="grid"></div>
         <div class="empty-hint" id="folderEmpty" hidden>Пока пусто</div>
-        <button id="resetBtn" style="margin-top:22px;width:100%;padding:12px;border:none;border-radius:16px;background:rgba(255,70,70,0.12);color:#ff4757;font-size:14px;font-weight:600;">
+        <button id="resetBtn" style="margin-top:22px;width:100%;padding:12px;border:none;border-radius:16px;background:rgba(255,77,154,0.12);color:#ff4d9a;font-size:14px;font-weight:600;box-shadow:0 0 0 1px rgba(255,77,154,0.35);">
           🗑 Сбросить любимое и историю
         </button>
       </div>
@@ -290,8 +383,10 @@
   </div>
 
   <div id="tabbar">
+    <button type="button" id="homeTab" class="active"><span class="icon">⌂</span>Главная</button>
     <button type="button" id="playTab"><span class="icon">▶️</span>Читать</button>
-    <button type="button" id="heartTab"><span class="icon">♥</span>Любимое</button>
+    <button type="button" id="heartTab"><span class="icon">♥</span>На потом</button>
+    <button type="button" id="libTab"><span class="icon">📚</span>Библиотека</button>
   </div>
 </div>
 
@@ -316,7 +411,7 @@
     <div id="readerToolbar">
       <button id="backBtn" title="Закрыть книгу">←</button>
       <button id="bookmarkBtn" title="В любимое">♡</button>
-      <button id="toReadBtn" title="Читать дальше">➕</button>
+      <button id="toReadBtn" title="В мою библиотеку">📚</button>
       <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
       <button class="fsz" id="autoBtn" title="Старт / пауза автопрокрутки">▶️</button>
       <button class="fsz" id="speedBtn" title="Скорость автопрокрутки">1×</button>
@@ -337,7 +432,12 @@
 
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor('#050a1c'); } catch (e) {}
+  try { tg.setBackgroundColor('#050a1c'); } catch (e) {}
+}
 const userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || 0;
 
 const params = new URLSearchParams(location.search);
@@ -346,8 +446,8 @@ const directBookId = params.get('book') || startParam || null;
 
 const FOLDER_META = {
   history: { title: 'Продолжить чтение', empty: 'Пока ничего не читала', path: 'history' },
-  bookmarks: { title: 'Любимое', empty: 'Пока нет любимых книг', path: 'bookmark' },
-  toread: { title: 'Читать дальше', empty: 'Список пуст', path: 'to-read' },
+  bookmarks: { title: 'На потом', empty: 'Пока никого не лайкнула', path: 'bookmark' },
+  toread: { title: 'Моя библиотека', empty: 'Библиотека пустая — нажми 📚 на обложке', path: 'to-read' },
 };
 
 /* ---------------- helpers ---------------- */
@@ -391,6 +491,29 @@ function bookCard(b, opts) {
       });
       el.querySelector('.cover').appendChild(mv);
     }
+  } else {
+    const like = document.createElement('button');
+    like.type = 'button';
+    like.className = 'card-like' + (isLiked(b.id) ? ' on' : '');
+    like.textContent = isLiked(b.id) ? '♥' : '♡';
+    like.setAttribute('aria-label', 'Лайк на потом');
+    like.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleLike(b, like);
+    });
+    const lib = document.createElement('button');
+    lib.type = 'button';
+    lib.className = 'card-lib' + (isInLibrary(b.id) ? ' on' : '');
+    lib.textContent = '📚';
+    lib.setAttribute('aria-label', 'В мою библиотеку');
+    lib.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleLibrary(b, lib);
+    });
+    el.querySelector('.cover').appendChild(like);
+    el.querySelector('.cover').appendChild(lib);
   }
   el.addEventListener('click', () => {
     if (opts.editable) return;
@@ -465,6 +588,50 @@ let currentFolder = null;
 let folderEditMode = false;
 let modalMode = null;
 let movingBook = null;
+
+function isLiked(id) {
+  return (libraryData.bookmarks || []).some(x => x.id === id);
+}
+function isInLibrary(id) {
+  return (libraryData.to_read || []).some(x => x.id === id);
+}
+async function toggleLike(book, btn) {
+  if (!userId || !book) return;
+  const res = await fetch(`/api/library/${userId}/bookmark/${book.id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.bookmarked) {
+    if (!isLiked(book.id)) libraryData.bookmarks.unshift(book);
+  } else {
+    libraryData.bookmarks = libraryData.bookmarks.filter(x => x.id !== book.id);
+  }
+  if (btn) {
+    btn.classList.toggle('on', data.bookmarked);
+    btn.textContent = data.bookmarked ? '♥' : '♡';
+  }
+  if (currentBookId === book.id) {
+    isBookmarked = data.bookmarked;
+    applyBookmarkVisual();
+  }
+  if (currentFolder === 'bookmarks' && !folderEditMode) renderFolder();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+}
+async function toggleLibrary(book, btn) {
+  if (!userId || !book) return;
+  const res = await fetch(`/api/library/${userId}/to-read/${book.id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.to_read) {
+    if (!isInLibrary(book.id)) libraryData.to_read.unshift(book);
+  } else {
+    libraryData.to_read = libraryData.to_read.filter(x => x.id !== book.id);
+  }
+  if (btn) btn.classList.toggle('on', data.to_read);
+  if (currentBookId === book.id) {
+    isToRead = data.to_read;
+    applyMineVisual();
+  }
+  if (currentFolder === 'toread' && !folderEditMode) renderFolder();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+}
 
 function customFolderId(key) {
   return key && String(key).startsWith('custom:') ? parseInt(key.slice(7), 10) : null;
@@ -763,13 +930,25 @@ async function submitFolderName() {
   renderFolder();
 }
 
+function setNav(which) {
+  document.getElementById('homeTab').classList.toggle('active', which === 'home');
+  document.getElementById('playTab').classList.toggle('active', which === 'play');
+  document.getElementById('heartTab').classList.toggle('active', which === 'heart');
+  document.getElementById('libTab').classList.toggle('active', which === 'lib');
+}
 function showHome() {
   closeFolder();
-  document.getElementById('heartTab').classList.remove('active');
+  setNav('home');
   document.getElementById('libraryHome').classList.remove('hidden');
   loadLibrary();
 }
 
+document.getElementById('homeTab').addEventListener('click', () => {
+  const input = document.getElementById('searchInput');
+  if (input) input.value = '';
+  showSearchMode(false);
+  showHome();
+});
 document.getElementById('playTab').addEventListener('click', () => {
   const book = (libraryData.history && libraryData.history[0]) || (libraryData.to_read && libraryData.to_read[0]);
   if (book) openReader(book.id);
@@ -777,12 +956,16 @@ document.getElementById('playTab').addEventListener('click', () => {
   else alert('Пока нет книги, которую продолжать. Найди её в поиске.');
 });
 document.getElementById('heartTab').addEventListener('click', () => {
-  if (currentFolder === 'bookmarks' || (customFolderId(currentFolder) && currentSection() === 'bookmarks')) {
-    showHome();
-    return;
-  }
-  document.getElementById('heartTab').classList.add('active');
+  setNav('heart');
+  document.getElementById('searchInput').value = '';
+  showSearchMode(false);
   openFolder('bookmarks');
+});
+document.getElementById('libTab').addEventListener('click', () => {
+  setNav('lib');
+  document.getElementById('searchInput').value = '';
+  showSearchMode(false);
+  openFolder('toread');
 });
 document.getElementById('folderBack').addEventListener('click', () => {
   const cid = customFolderId(currentFolder);
@@ -849,6 +1032,16 @@ const progressEl = document.getElementById('readerProgress');
 function applyBookmarkVisual() {
   bookmarkBtn.textContent = isBookmarked ? '♥' : '♡';
   bookmarkBtn.classList.toggle('on', isBookmarked);
+}
+function applyMineVisual() {
+  toReadBtn.classList.toggle('on', isToRead);
+}
+function findBook(id) {
+  const pools = []
+    .concat(libraryData.history || [])
+    .concat(libraryData.bookmarks || [])
+    .concat(libraryData.to_read || []);
+  return pools.find(x => x.id === id) || { id };
 }
 
 let fontSize = 17;
@@ -1016,7 +1209,7 @@ async function openReader(bookId) {
     fetch(`/api/library/${userId}/state/${bookId}`).then(r => r.json()).then(st => {
       isBookmarked = st.bookmarked; isToRead = st.to_read;
       applyBookmarkVisual();
-      toReadBtn.classList.toggle('on', isToRead);
+      applyMineVisual();
     }).catch(() => {});
   }
 
@@ -1112,19 +1305,11 @@ document.getElementById('backBtn').addEventListener('click', closeReader);
 
 bookmarkBtn.addEventListener('click', async () => {
   if (!userId || !currentBookId) return;
-  const res = await fetch(`/api/library/${userId}/bookmark/${currentBookId}`, { method: 'POST' });
-  const data = await res.json();
-  isBookmarked = data.bookmarked;
-  applyBookmarkVisual();
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+  await toggleLike(findBook(currentBookId));
 });
 toReadBtn.addEventListener('click', async () => {
   if (!userId || !currentBookId) return;
-  const res = await fetch(`/api/library/${userId}/to-read/${currentBookId}`, { method: 'POST' });
-  const data = await res.json();
-  isToRead = data.to_read;
-  toReadBtn.classList.toggle('on', isToRead);
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+  await toggleLibrary(findBook(currentBookId));
 });
 
 /* ---------------- init ---------------- */

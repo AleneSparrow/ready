@@ -184,15 +184,49 @@ CLASSIC_QUERIES = (
 
 
 def popular(limit: int = 24) -> list[SearchResult]:
-    """Подборка известных книг каталога — запасной главный экран, пока нет своей истории."""
+    """Известные книги каталога. На полной странице лимит больше — берём глубже по каждому запросу."""
     seen: set[int] = set()
     out: list[SearchResult] = []
+    per = 8 if limit > 24 else 3
     for q in CLASSIC_QUERIES:
-        for row in search(q, limit=3):
+        for row in search(q, limit=per):
             if row.id in seen:
                 continue
             seen.add(row.id)
             out.append(row)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
+    """Похожие книги: автор, затем название, затем жанр — без самой исходной."""
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT author, title, genre FROM books WHERE rowid = ?", (book_id,))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return []
+    raw_author, title, genre = row[0] or "", row[1] or "", row[2] or ""
+    author = format_authors(raw_author)
+    last = ""
+    if author:
+        last = author.split(",")[0].strip().split()[-1]
+    genre0 = genre.split(",")[0].strip() if genre else ""
+    title_q = " ".join(title.split()[:4])
+    seen = {book_id}
+    out: list[SearchResult] = []
+    for q in (last, title_q, genre0):
+        if not q or len(q) < 3:
+            continue
+        for item in search(q, limit=max(12, limit * 3)):
+            if item.id in seen:
+                continue
+            seen.add(item.id)
+            out.append(item)
             if len(out) >= limit:
                 return out
     return out
