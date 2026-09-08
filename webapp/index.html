@@ -102,7 +102,7 @@
   #readerToolbar button {
     border: none; background: none; font-size: 18px; padding: 6px 8px; border-radius: 8px; color: inherit;
   }
-  #readerToolbar button.on { color: var(--accent); }
+  #readerToolbar button.on { background: var(--accent); color: #fff; border-radius: 8px; }
   #readerToolbar .fsz { font-size: 14px; background: var(--tg-theme-bg-color, #fff); border-radius: 8px; }
   #readerTitle { flex: 1; text-align: center; font-weight: 600; font-size: 13px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -386,16 +386,17 @@ function nextPage() { if (readerMode === 'paged') goToPage(currentPage + 1); }
 function prevPage() { if (readerMode === 'paged') goToPage(currentPage - 1); }
 document.getElementById('tap-next').addEventListener('click', nextPage);
 document.getElementById('tap-prev').addEventListener('click', prevPage);
-// свайп вертикальный (как в большинстве читалок): вверх — следующая
-// страница, вниз — предыдущая. touch-action:none на #pager в paged-режиме
-// не даёт браузеру одновременно тянуть нативный скролл поверх этого
-let touchStartY = null;
-pagerEl.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+// свайп горизонтальный: влево — следующая страница, вправо — предыдущая
+// (соответствует тап-зонам tap-prev/tap-next слева/справа экрана).
+// touch-action:none на #pager в paged-режиме не даёт браузеру одновременно
+// тянуть нативный скролл поверх этого
+let touchStartX = null;
+pagerEl.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
 pagerEl.addEventListener('touchend', e => {
-  if (touchStartY === null || readerMode !== 'paged') { touchStartY = null; return; }
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dy) > 40) { dy < 0 ? nextPage() : prevPage(); }
-  touchStartY = null;
+  if (touchStartX === null || readerMode !== 'paged') { touchStartX = null; return; }
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 40) { dx < 0 ? nextPage() : prevPage(); }
+  touchStartX = null;
 }, { passive: true });
 window.addEventListener('keydown', e => {
   if (!readerEl.classList.contains('active')) return;
@@ -497,25 +498,32 @@ function stopAutoScroll() {
   autoBtn.classList.remove('on');
 }
 function startAutoScroll() {
+  const begin = () => {
+    autoBtn.textContent = '⏸';
+    autoBtn.classList.add('on');
+    let last = performance.now();
+    function step(now) {
+      const dt = (now - last) / 1000;
+      last = now;
+      pagerEl.scrollTop += autoScrollSpeed * dt;
+      if (pagerEl.scrollTop + pagerEl.clientHeight >= columnsEl.scrollHeight - 2) {
+        stopAutoScroll();
+        return;
+      }
+      autoScrollRAF = requestAnimationFrame(step);
+    }
+    autoScrollRAF = requestAnimationFrame(step);
+  };
   if (readerMode !== 'scroll') {
     readerMode = 'scroll';
     try { localStorage.setItem('reader_mode', readerMode); } catch (e) {}
     applyMode();
+    // после смены режима вёрстке нужен кадр, чтобы пересчитать scrollHeight —
+    // иначе автопрокрутка сразу решает, что уже 'в конце', и тут же гасится
+    requestAnimationFrame(() => requestAnimationFrame(begin));
+  } else {
+    begin();
   }
-  autoBtn.textContent = '⏸';
-  autoBtn.classList.add('on');
-  let last = performance.now();
-  function step(now) {
-    const dt = (now - last) / 1000;
-    last = now;
-    pagerEl.scrollTop += autoScrollSpeed * dt;
-    if (pagerEl.scrollTop + pagerEl.clientHeight >= columnsEl.scrollHeight - 2) {
-      stopAutoScroll();
-      return;
-    }
-    autoScrollRAF = requestAnimationFrame(step);
-  }
-  autoScrollRAF = requestAnimationFrame(step);
 }
 autoBtn.addEventListener('click', () => { autoScrollRAF ? stopAutoScroll() : startAutoScroll(); });
 // долгий тап — ускорить/замедлить (переключение по кругу)
