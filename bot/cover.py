@@ -5,11 +5,14 @@ import os
 import subprocess
 import zipfile
 
-from . import config
+from . import cache_utils, config
 from .gdrive import download_file
 
 COVER_ARCHIVE_CACHE_DIR = os.path.join(config.CACHE_DIR, "cover_archives")
 COVER_CACHE_DIR = os.path.join(config.CACHE_DIR, "covers")
+
+COVER_ARCHIVE_CACHE_MAX_BYTES = int(1.2 * 1024**3)
+COVER_CACHE_MAX_BYTES = 200 * 1024**2
 
 
 def _cover_archive_name(source_inp: str) -> str:
@@ -22,6 +25,8 @@ def _ensure_cover_archive(source_inp: str) -> str:
     archive_name = _cover_archive_name(source_inp)
     local_path = os.path.join(COVER_ARCHIVE_CACHE_DIR, os.path.basename(archive_name))
     if not os.path.exists(local_path):
+        os.makedirs(COVER_ARCHIVE_CACHE_DIR, exist_ok=True)
+        cache_utils.ensure_space(COVER_ARCHIVE_CACHE_DIR, COVER_ARCHIVE_CACHE_MAX_BYTES)
         download_file(archive_name, local_path, config.GDRIVE_LIBRARY_FOLDER_ID)
     return local_path
 
@@ -54,6 +59,7 @@ def get_cover_jpeg(book_id: int, libid: str, source_inp: str) -> bytes | None:
     if jpeg_bytes is None:
         return None
 
+    cache_utils.ensure_space(COVER_CACHE_DIR, COVER_CACHE_MAX_BYTES, incoming_bytes=len(jpeg_bytes))
     with open(cache_path, "wb") as f:
         f.write(jpeg_bytes)
     return jpeg_bytes

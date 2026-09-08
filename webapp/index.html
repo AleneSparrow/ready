@@ -75,9 +75,21 @@
     padding: 10px 8px; text-align: center; }
   .stat b { display: block; font-size: 20px; }
   .stat span { font-size: 11px; opacity: 0.6; }
-  h3.section-title { font-size: 15px; margin: 0 0 10px; }
   .empty-hint { opacity: 0.5; font-size: 13px; padding: 4px 0 18px; }
-  section + section { margin-top: 20px; }
+  section + section { margin-top: 22px; }
+
+  .folder-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .folder-icon {
+    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .folder-icon.history { background: linear-gradient(135deg,#ff9a56,#ff6a88); }
+  .folder-icon.bookmarks { background: linear-gradient(135deg,#f6d365,#fda085); }
+  .folder-icon.toread { background: linear-gradient(135deg,#43cea2,#185a9d); }
+  .folder-text { display: flex; flex-direction: column; }
+  .folder-title { font-size: 15px; font-weight: 700; }
+  .folder-count { font-size: 12px; opacity: 0.55; }
 
   /* ---------- reader ---------- */
   #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
@@ -123,17 +135,35 @@
     <div class="screen" id="screen-library">
       <div id="statsRow"></div>
       <section>
-        <h3 class="section-title">Продолжить чтение</h3>
+        <div class="folder-header">
+          <div class="folder-icon history">📖</div>
+          <div class="folder-text">
+            <div class="folder-title">Продолжить чтение</div>
+            <div class="folder-count" id="historyCount">0 книг</div>
+          </div>
+        </div>
         <div id="historyGrid" class="grid"></div>
         <div class="empty-hint" id="historyEmpty" hidden>Пока ничего не читала</div>
       </section>
       <section>
-        <h3 class="section-title">Закладки</h3>
+        <div class="folder-header">
+          <div class="folder-icon bookmarks">🔖</div>
+          <div class="folder-text">
+            <div class="folder-title">Закладки</div>
+            <div class="folder-count" id="bookmarksCount">0 книг</div>
+          </div>
+        </div>
         <div id="bookmarksGrid" class="grid"></div>
         <div class="empty-hint" id="bookmarksEmpty" hidden>Нет закладок</div>
       </section>
       <section>
-        <h3 class="section-title">Читать дальше</h3>
+        <div class="folder-header">
+          <div class="folder-icon toread">➕</div>
+          <div class="folder-text">
+            <div class="folder-title">Читать дальше</div>
+            <div class="folder-count" id="toReadCount">0 книг</div>
+          </div>
+        </div>
         <div id="toReadGrid" class="grid"></div>
         <div class="empty-hint" id="toReadEmpty" hidden>Список пуст</div>
       </section>
@@ -198,6 +228,15 @@ function renderGrid(container, items) {
   container.innerHTML = '';
   items.forEach(b => container.appendChild(bookCard(b)));
 }
+function pluralBooks(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  let word = 'книг';
+  if (mod100 < 11 || mod100 > 14) {
+    if (mod10 === 1) word = 'книга';
+    else if (mod10 >= 2 && mod10 <= 4) word = 'книги';
+  }
+  return `${n} ${word}`;
+}
 
 /* ---------------- tabs ---------------- */
 document.querySelectorAll('#tabbar button').forEach(btn => {
@@ -220,6 +259,10 @@ searchInput.addEventListener('input', () => {
   if (!q) { searchResults.innerHTML = ''; searchHint.style.display = 'block'; searchHint.textContent = 'Начни печатать, чтобы найти книгу'; return; }
   searchTimer = setTimeout(() => runSearch(q), 350);
 });
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') searchInput.blur();
+});
+searchResults.addEventListener('touchstart', () => searchInput.blur(), { passive: true });
 async function runSearch(q) {
   searchHint.style.display = 'block';
   searchHint.textContent = 'Ищу…';
@@ -249,10 +292,13 @@ async function loadLibrary() {
     `;
     renderGrid(document.getElementById('historyGrid'), data.history);
     document.getElementById('historyEmpty').hidden = data.history.length > 0;
+    document.getElementById('historyCount').textContent = pluralBooks(data.history.length);
     renderGrid(document.getElementById('bookmarksGrid'), data.bookmarks);
     document.getElementById('bookmarksEmpty').hidden = data.bookmarks.length > 0;
+    document.getElementById('bookmarksCount').textContent = pluralBooks(data.bookmarks.length);
     renderGrid(document.getElementById('toReadGrid'), data.to_read);
     document.getElementById('toReadEmpty').hidden = data.to_read.length > 0;
+    document.getElementById('toReadCount').textContent = pluralBooks(data.to_read.length);
   } catch (e) { /* тихо */ }
 }
 

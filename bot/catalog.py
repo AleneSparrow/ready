@@ -13,6 +13,7 @@ import sqlite3
 from typing import NamedTuple
 
 from . import config
+from .format_author import format_authors
 
 
 class SearchResult(NamedTuple):
@@ -88,13 +89,22 @@ def _rows_from_ids(conn: sqlite3.Connection, ids: list[int]) -> list[SearchResul
     return [by_id[i] for i in ids if i in by_id]
 
 
+def _normalize_title(title: str) -> str:
+    # схлопываем пробелы и убираем пунктуацию по краям — в каталоге одна и та
+    # же книга из fb2/epub источников иногда отличается лишь этим
+    t = re.sub(r"\s+", " ", title.strip().lower())
+    return t.strip(" .,-—:;")
+
+
 def _dedupe(results: list[SearchResult], limit: int) -> list[SearchResult]:
-    """В каталоге много одинаковых книг из разных источников (flibusta/librusec) —
-    схлопываем по (название, автор), оставляя первое (самое релевантное) вхождение."""
+    """В каталоге много одинаковых книг из разных источников/форматов
+    (flibusta/librusec, fb2/epub) — схлопываем по (название, автор), оставляя
+    первое (самое релевантное) вхождение. Автор сравнивается в отформатированном
+    виде — сырые строки в каталоге иногда чуть различаются мелочами."""
     seen: set[tuple[str, str]] = set()
     deduped = []
     for r in results:
-        key = (r.title.strip().lower(), r.author.strip().lower())
+        key = (_normalize_title(r.title), format_authors(r.author).strip().lower())
         if key in seen:
             continue
         seen.add(key)
