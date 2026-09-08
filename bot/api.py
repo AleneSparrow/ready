@@ -62,6 +62,54 @@ def api_debug_clear_cache():
     return {"freed_bytes": freed}
 
 
+@app.get("/api/popular")
+def api_popular():
+    ids = library.popular_book_ids(24)
+    items = [b for b in (_brief(i) for i in ids) if b]
+    if len(items) < 16:
+        have = {b["id"] for b in items}
+        for row in catalog.popular(24):
+            if row.id in have:
+                continue
+            brief = _brief(row.id)
+            if brief:
+                items.append(brief)
+                have.add(row.id)
+            if len(items) >= 24:
+                break
+    return items[:24]
+
+
+@app.get("/api/recommendations/{user_id}")
+def api_recommendations(user_id: int):
+    """Подборка по названиям своих папок; если папок нет — популярное."""
+    items = []
+    have: set[int] = set()
+    for folder in library.list_folders(user_id):
+        for row in catalog.search(folder["name"], limit=5):
+            if row.id in have:
+                continue
+            brief = _brief(row.id)
+            if not brief:
+                continue
+            items.append(brief)
+            have.add(row.id)
+            if len(items) >= 12:
+                return items
+    if len(items) < 8:
+        for row in catalog.popular(12):
+            if row.id in have:
+                continue
+            brief = _brief(row.id)
+            if not brief:
+                continue
+            items.append(brief)
+            have.add(row.id)
+            if len(items) >= 12:
+                break
+    return items
+
+
 @app.get("/api/search")
 def api_search(q: str):
     results = catalog.search(q)
@@ -225,12 +273,13 @@ def api_library_overview(user_id: int):
 
 class FolderNameBody(BaseModel):
     name: str
+    section: str | None = None
 
 
 @app.post("/api/library/{user_id}/folders")
 def api_create_folder(user_id: int, body: FolderNameBody):
     try:
-        return library.create_folder(user_id, body.name)
+        return library.create_folder(user_id, body.name, body.section or "bookmarks")
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -260,8 +309,10 @@ def api_get_folder(user_id: int, folder_id: int):
         raise HTTPException(404, "Папка не найдена")
     books = [b for b in (_brief(i) for i in ids) if b]
     folders = library.list_folders(user_id)
-    name = next((f["name"] for f in folders if f["id"] == folder_id), "")
-    return {"id": folder_id, "name": name, "books": books}
+    meta = next((f for f in folders if f["id"] == folder_id), None)
+    name = meta["name"] if meta else ""
+    section = meta["section"] if meta else "bookmarks"
+    return {"id": folder_id, "name": name, "section": section, "books": books}
 
 
 @app.post("/api/library/{user_id}/folders/{folder_id}/books/{book_id}")

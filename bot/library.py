@@ -60,10 +60,16 @@ def _connect() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             name TEXT NOT NULL,
+            section TEXT NOT NULL DEFAULT 'bookmarks',
             created_at REAL NOT NULL
         )
         """
     )
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(folders)").fetchall()]
+    if "section" not in cols:
+        conn.execute(
+            "ALTER TABLE folders ADD COLUMN section TEXT NOT NULL DEFAULT 'bookmarks'"
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS folder_books (
@@ -258,17 +264,47 @@ def get_stats(user_id: int) -> dict:
         conn.close()
 
 
-def _clean_folder_name(name: str) -> str:
-    return " ".join((name or "").split())[:60]
-
-
-def list_folders(user_id: int) -> list[dict]:
+def popular_book_ids(limit: int = 24) -> list[int]:
+    """Книги, которые чаще всего открывали все читатели — задел под рекомендации."""
     conn = _connect()
     try:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT f.id, f.name, COUNT(fb.book_id)
+            SELECT book_id, COUNT(*) AS c
+            FROM reading_history
+            GROUP BY book_id
+            ORDER BY c DESC, MAX(updated_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+FOLDER_SECTIONS = ("history", "bookmarks", "toread")
+
+
+def _clean_folder_name(name: str) -> str:
+    return " ".join((name or "").split())[:60]
+
+
+def _valid_section(section: str) -> str:
+    if section not in FOLDER_SECTIONS:
+        raise ValueError("Неизвестный раздел папки")
+    return section
+
+
+def list_folders(user_id: int) -> list[dict]:
+    """Папки внутри разделов библиотеки. Имя и состав книг — основа будущих рекомендаций."""
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT f.id, f.name, f.section, COUNT(fb.book_id)
             FROM folders f
             LEFT JOIN folder_books fb ON fb.folder_id = f.id
             WHERE f.user_id=?
@@ -277,24 +313,28 @@ def list_folders(user_id: int) -> list[dict]:
             """,
             (user_id,),
         )
-        return [{"id": r[0], "name": r[1], "count": r[2]} for r in cur.fetchall()]
+        return [
+            {"id": r[0], "name": r[1], "section": r[2] or "bookmarks", "count": r[3]}
+            for r in cur.fetchall()
+        ]
     finally:
         conn.close()
 
 
-def create_folder(user_id: int, name: str) -> dict:
+def create_folder(user_id: int, name: str, section: str) -> dict:
     name = _clean_folder_name(name)
+    section = _valid_section(section)
     if not name:
         raise ValueError("Нужно название папки")
     conn = _connect()
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO folders (user_id, name, created_at) VALUES (?, ?, ?)",
-            (user_id, name, time.time()),
+            "INSERT INTO folders (user_id, name, section, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, name, section, time.time()),
         )
         conn.commit()
-        return {"id": cur.lastrowid, "name": name, "count": 0}
+        return {"id": cur.lastrowid, "name": name, "section": section, "count": 0}
     finally:
         conn.close()
 

@@ -165,3 +165,34 @@ def get_book(book_id: int) -> BookMeta | None:
         return BookMeta(*row) if row else None
     finally:
         conn.close()
+
+
+CLASSIC_QUERIES = (
+    "мастер и маргарита",
+    "война и мир",
+    "преступление и наказание",
+    "евгений онегин",
+    "анна каренина",
+    "идиот",
+    "отцы и дети",
+    "собачье сердце",
+    "двенадцать стульев",
+    "тихий дон",
+    "герой нашего времени",
+    "мертвые души",
+)
+
+
+def popular(limit: int = 24) -> list[SearchResult]:
+    """Подборка известных книг каталога — запасной главный экран, пока нет своей истории."""
+    seen: set[int] = set()
+    out: list[SearchResult] = []
+    for q in CLASSIC_QUERIES:
+        for row in search(q, limit=3):
+            if row.id in seen:
+                continue
+            seen.add(row.id)
+            out.append(row)
+            if len(out) >= limit:
+                return out
+    return out
