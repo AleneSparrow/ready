@@ -54,6 +54,26 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS folder_books (
+            folder_id INTEGER NOT NULL,
+            book_id INTEGER NOT NULL,
+            added_at REAL NOT NULL,
+            PRIMARY KEY (folder_id, book_id)
+        )
+        """
+    )
     return conn
 
 
@@ -203,6 +223,14 @@ def reset_user(user_id: int) -> None:
         conn.execute("DELETE FROM bookmarks WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM to_read WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM reading_history WHERE user_id=?", (user_id,))
+        conn.execute(
+            """
+            DELETE FROM folder_books WHERE folder_id IN
+            (SELECT id FROM folders WHERE user_id=?)
+            """,
+            (user_id,),
+        )
+        conn.execute("DELETE FROM folders WHERE user_id=?", (user_id,))
         conn.commit()
     finally:
         conn.close()
@@ -226,5 +254,130 @@ def get_stats(user_id: int) -> dict:
             "bookmarks_count": bookmarks_count,
             "to_read_count": to_read_count,
         }
+    finally:
+        conn.close()
+
+
+def _clean_folder_name(name: str) -> str:
+    return " ".join((name or "").split())[:60]
+
+
+def list_folders(user_id: int) -> list[dict]:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT f.id, f.name, COUNT(fb.book_id)
+            FROM folders f
+            LEFT JOIN folder_books fb ON fb.folder_id = f.id
+            WHERE f.user_id=?
+            GROUP BY f.id
+            ORDER BY f.created_at ASC
+            """,
+            (user_id,),
+        )
+        return [{"id": r[0], "name": r[1], "count": r[2]} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def create_folder(user_id: int, name: str) -> dict:
+    name = _clean_folder_name(name)
+    if not name:
+        raise ValueError("Нужно название папки")
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO folders (user_id, name, created_at) VALUES (?, ?, ?)",
+            (user_id, name, time.time()),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "name": name, "count": 0}
+    finally:
+        conn.close()
+
+
+def rename_folder(user_id: int, folder_id: int, name: str) -> dict | None:
+    name = _clean_folder_name(name)
+    if not name:
+        raise ValueError("Нужно название папки")
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE folders SET name=? WHERE id=? AND user_id=?",
+            (name, folder_id, user_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return {"id": folder_id, "name": name}
+    finally:
+        conn.close()
+
+
+def delete_folder(user_id: int, folder_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM folders WHERE id=? AND user_id=?", (folder_id, user_id))
+        if not cur.fetchone():
+            return False
+        cur.execute("DELETE FROM folder_books WHERE folder_id=?", (folder_id,))
+        cur.execute("DELETE FROM folders WHERE id=? AND user_id=?", (folder_id, user_id))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def get_folder_books(user_id: int, folder_id: int) -> list[int] | None:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM folders WHERE id=? AND user_id=?", (folder_id, user_id))
+        if not cur.fetchone():
+            return None
+        cur.execute(
+            "SELECT book_id FROM folder_books WHERE folder_id=? ORDER BY added_at DESC",
+            (folder_id,),
+        )
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def add_book_to_folder(user_id: int, folder_id: int, book_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM folders WHERE id=? AND user_id=?", (folder_id, user_id))
+        if not cur.fetchone():
+            return False
+        cur.execute(
+            "INSERT OR IGNORE INTO folder_books (folder_id, book_id, added_at) VALUES (?, ?, ?)",
+            (folder_id, book_id, time.time()),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def remove_book_from_folder(user_id: int, folder_id: int, book_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM folders WHERE id=? AND user_id=?", (folder_id, user_id))
+        if not cur.fetchone():
+            return False
+        cur.execute(
+            "DELETE FROM folder_books WHERE folder_id=? AND book_id=?",
+            (folder_id, book_id),
+        )
+        conn.commit()
+        return True
     finally:
         conn.close()

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-title-above-even-btns-20260908 -->
+<!-- rb-custom-folders-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
@@ -114,7 +114,52 @@
     color: inherit; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600;
   }
   .folder-nav h2 { flex: 1; margin: 0; font-size: 17px; }
-  .folder-nav button.on { background: var(--accent); color: #fff; }
+  .card-move {
+    position: absolute; bottom: 4px; right: 4px; z-index: 3;
+    width: 28px; height: 28px; border: none; border-radius: 8px;
+    background: rgba(36,129,204,0.95); color: #fff; font-size: 14px;
+    padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .folder-icon.custom { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
+  .folder-section-label {
+    font-size: 13px; font-weight: 700; opacity: 0.55; margin: 18px 2px 10px;
+  }
+  .create-folder-btn {
+    width: 100%; padding: 14px; border: 1.5px dashed rgba(127,127,127,0.4);
+    border-radius: 16px; background: none; color: inherit;
+    font-size: 15px; font-weight: 700;
+  }
+  .folder-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px;
+  }
+  .folder-actions button {
+    border: none; background: var(--tg-theme-secondary-bg-color, #f0f0f2);
+    color: inherit; border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600;
+  }
+  .folder-actions button.on { background: var(--accent); color: #fff; }
+  .folder-actions button.danger { color: #ff4757; background: rgba(255,70,70,0.12); }
+  #modalWrap {
+    display: none; position: fixed; inset: 0; z-index: 80;
+    background: rgba(0,0,0,0.45); align-items: flex-end; justify-content: center;
+  }
+  #modalWrap.open { display: flex; }
+  .modal-sheet {
+    width: 100%; max-width: 480px; background: var(--tg-theme-bg-color, #fff);
+    border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .modal-sheet h3 { margin: 0 0 12px; font-size: 16px; }
+  .modal-sheet input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: none;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit; font-size: 16px;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .modal-actions button, .pick-item {
+    flex: 1; border: none; border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 600;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f2); color: inherit;
+  }
+  .modal-actions .ok { background: var(--accent); color: #fff; }
+  .pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+  .pick-item { width: 100%; text-align: left; }
 
   /* ---------- reader ---------- */
   #reader { position: fixed; inset: 0; background: var(--tg-theme-bg-color, #fff); z-index: 50; display: none; flex-direction: column; }
@@ -217,6 +262,9 @@
             <span class="folder-chevron">›</span>
           </button>
         </div>
+        <button type="button" class="create-folder-btn" id="createFolderHome">＋ Создать папку</button>
+        <div class="folder-section-label" id="myFoldersLabel" hidden>Мои папки</div>
+        <div class="folder-grid" id="customFolderGrid"></div>
         <button id="resetBtn" style="margin-top:26px;width:100%;padding:12px;border:none;border-radius:12px;background:rgba(255,70,70,0.12);color:#ff4757;font-size:14px;font-weight:600;">
           🗑 Сбросить закладки и историю
         </button>
@@ -226,7 +274,12 @@
         <div class="folder-nav">
           <button type="button" id="folderBack">← Назад</button>
           <h2 id="folderHeading"></h2>
+        </div>
+        <div class="folder-actions">
+          <button type="button" id="folderCreate">＋ Создать папку</button>
           <button type="button" id="folderEdit">Изменить</button>
+          <button type="button" id="folderRename" hidden>Переименовать</button>
+          <button type="button" id="folderDeleteCustom" class="danger" hidden>Удалить папку</button>
         </div>
         <div id="folderGrid" class="grid"></div>
         <div class="empty-hint" id="folderEmpty" hidden>Пока пусто</div>
@@ -237,6 +290,18 @@
   <div id="tabbar">
     <button data-tab="search" class="active"><span class="icon">🔍</span>Поиск</button>
     <button data-tab="library"><span class="icon">📚</span>Библиотека</button>
+  </div>
+</div>
+
+<div id="modalWrap">
+  <div class="modal-sheet">
+    <h3 id="modalTitle">Папка</h3>
+    <input id="modalInput" maxlength="60" placeholder="Название папки" />
+    <div class="pick-list" id="modalPick" hidden></div>
+    <div class="modal-actions">
+      <button type="button" id="modalCancel">Отмена</button>
+      <button type="button" class="ok" id="modalOk">Готово</button>
+    </div>
   </div>
 </div>
 
@@ -311,6 +376,19 @@ function bookCard(b, opts) {
       if (opts.onRemove) opts.onRemove(b);
     });
     el.querySelector('.cover').appendChild(del);
+    if (opts.onMove) {
+      const mv = document.createElement('button');
+      mv.type = 'button';
+      mv.className = 'card-move';
+      mv.setAttribute('aria-label', 'В папку');
+      mv.textContent = '📁';
+      mv.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        opts.onMove(b);
+      });
+      el.querySelector('.cover').appendChild(mv);
+    }
   }
   el.addEventListener('click', () => {
     if (opts.editable) return;
@@ -379,20 +457,59 @@ async function runSearch(q) {
 }
 
 /* ---------------- library ---------------- */
-let libraryData = { history: [], bookmarks: [], to_read: [] };
+let libraryData = { history: [], bookmarks: [], to_read: [], folders: [], customBooks: {} };
 let currentFolder = null;
 let folderEditMode = false;
+let modalMode = null;
+let movingBook = null;
 
+function customFolderId(key) {
+  return key && String(key).startsWith('custom:') ? parseInt(key.slice(7), 10) : null;
+}
 function folderItems(key) {
+  const cid = customFolderId(key);
+  if (cid) return libraryData.customBooks[cid] || [];
   if (key === 'history') return libraryData.history;
   if (key === 'bookmarks') return libraryData.bookmarks;
   return libraryData.to_read;
+}
+function folderTitle(key) {
+  const cid = customFolderId(key);
+  if (cid) {
+    const f = libraryData.folders.find(x => x.id === cid);
+    return f ? f.name : 'Папка';
+  }
+  return FOLDER_META[key].title;
 }
 
 function updateFolderCounts() {
   document.getElementById('historyCount').textContent = pluralBooks(libraryData.history.length);
   document.getElementById('bookmarksCount').textContent = pluralBooks(libraryData.bookmarks.length);
   document.getElementById('toReadCount').textContent = pluralBooks(libraryData.to_read.length);
+  renderCustomFolderCards();
+}
+
+function renderCustomFolderCards() {
+  const grid = document.getElementById('customFolderGrid');
+  const label = document.getElementById('myFoldersLabel');
+  grid.innerHTML = '';
+  const folders = libraryData.folders || [];
+  label.hidden = folders.length === 0;
+  folders.forEach(f => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'folder-card';
+    btn.innerHTML = `
+      <div class="folder-icon custom">📁</div>
+      <div class="folder-text">
+        <div class="folder-title">${escapeHtml(f.name)}</div>
+        <div class="folder-count">${pluralBooks(f.count || 0)}</div>
+      </div>
+      <span class="folder-chevron">›</span>
+    `;
+    btn.addEventListener('click', () => openFolder('custom:' + f.id));
+    grid.appendChild(btn);
+  });
 }
 
 async function loadLibrary() {
@@ -400,11 +517,10 @@ async function loadLibrary() {
   try {
     const res = await fetch(`/api/library/${userId}/overview`);
     const data = await res.json();
-    libraryData = {
-      history: data.history || [],
-      bookmarks: data.bookmarks || [],
-      to_read: data.to_read || [],
-    };
+    libraryData.history = data.history || [];
+    libraryData.bookmarks = data.bookmarks || [];
+    libraryData.to_read = data.to_read || [];
+    libraryData.folders = data.folders || [];
     const s = data.stats;
     document.getElementById('statsRow').innerHTML = `
       <div class="stat"><b>${s.books_opened}</b><span>открыто</span></div>
@@ -412,18 +528,33 @@ async function loadLibrary() {
       <div class="stat"><b>${s.bookmarks_count}</b><span>закладок</span></div>
     `;
     updateFolderCounts();
-    if (currentFolder) renderFolder();
+    if (currentFolder) {
+      const cid = customFolderId(currentFolder);
+      if (cid) await loadCustomFolderBooks(cid);
+      renderFolder();
+    }
   } catch (e) { /* тихо */ }
 }
 
-function openFolder(key) {
+async function loadCustomFolderBooks(id) {
+  const res = await fetch(`/api/library/${userId}/folders/${id}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  libraryData.customBooks[id] = data.books || [];
+}
+
+async function openFolder(key) {
   currentFolder = key;
   folderEditMode = false;
   document.getElementById('libraryHome').classList.add('hidden');
   document.getElementById('libraryFolder').classList.add('open');
-  document.getElementById('folderHeading').textContent = FOLDER_META[key].title;
   document.getElementById('folderEdit').textContent = 'Изменить';
   document.getElementById('folderEdit').classList.remove('on');
+  const cid = customFolderId(key);
+  document.getElementById('folderRename').hidden = !cid;
+  document.getElementById('folderDeleteCustom').hidden = !cid;
+  if (cid) await loadCustomFolderBooks(cid);
+  document.getElementById('folderHeading').textContent = folderTitle(key);
   renderFolder();
 }
 function closeFolder() {
@@ -437,28 +568,147 @@ function renderFolder() {
   const items = folderItems(currentFolder);
   const empty = document.getElementById('folderEmpty');
   empty.hidden = items.length > 0;
-  empty.textContent = FOLDER_META[currentFolder].empty;
+  const cid = customFolderId(currentFolder);
+  empty.textContent = cid ? 'Папка пустая — в режиме «Изменить» можно сложить сюда книги из других папок' : FOLDER_META[currentFolder].empty;
   renderGrid(document.getElementById('folderGrid'), items, {
     editable: folderEditMode,
     onRemove: removeFromFolder,
+    onMove: askMoveBookToFolder,
   });
 }
 
 async function removeFromFolder(book) {
   if (!userId || !currentFolder) return;
-  const path = FOLDER_META[currentFolder].path;
+  const cid = customFolderId(currentFolder);
   try {
-    await fetch(`/api/library/${userId}/${path}/${book.id}`, { method: 'DELETE' });
+    if (cid) {
+      await fetch(`/api/library/${userId}/folders/${cid}/books/${book.id}`, { method: 'DELETE' });
+    } else {
+      const path = FOLDER_META[currentFolder].path;
+      await fetch(`/api/library/${userId}/${path}/${book.id}`, { method: 'DELETE' });
+    }
     const list = folderItems(currentFolder);
     const idx = list.findIndex(x => x.id === book.id);
     if (idx >= 0) list.splice(idx, 1);
+    const folder = libraryData.folders.find(f => f.id === cid);
+    if (folder) folder.count = Math.max(0, (folder.count || 1) - 1);
     updateFolderCounts();
     renderFolder();
     if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
   } catch (e) { /* тихо */ }
 }
 
-document.querySelectorAll('.folder-card').forEach(btn => {
+function closeModal() {
+  document.getElementById('modalWrap').classList.remove('open');
+  modalMode = null;
+  movingBook = null;
+}
+function openNameModal(title, value, mode) {
+  modalMode = mode;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalInput').hidden = false;
+  document.getElementById('modalInput').value = value || '';
+  document.getElementById('modalPick').hidden = true;
+  document.getElementById('modalOk').hidden = false;
+  document.getElementById('modalWrap').classList.add('open');
+  setTimeout(() => document.getElementById('modalInput').focus(), 50);
+}
+function askCreateFolder() {
+  openNameModal('Новая папка', '', 'create');
+}
+function askRenameFolder() {
+  const cid = customFolderId(currentFolder);
+  if (!cid) return;
+  openNameModal('Название папки', folderTitle(currentFolder), 'rename');
+}
+async function askMoveBookToFolder(book) {
+  movingBook = book;
+  const cid = customFolderId(currentFolder);
+  const targets = (libraryData.folders || []).filter(f => f.id !== cid);
+  if (!targets.length) {
+    openNameModal('Сначала назови новую папку', '', 'create-then-move');
+    return;
+  }
+  modalMode = 'pick';
+  document.getElementById('modalTitle').textContent = 'Куда положить книгу?';
+  document.getElementById('modalInput').hidden = true;
+  document.getElementById('modalOk').hidden = true;
+  const pick = document.getElementById('modalPick');
+  pick.hidden = false;
+  pick.innerHTML = '';
+  targets.forEach(f => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pick-item';
+    b.textContent = f.name;
+    b.addEventListener('click', () => addBookToCustomFolder(f.id, book));
+    pick.appendChild(b);
+  });
+  const extra = document.createElement('button');
+  extra.type = 'button';
+  extra.className = 'pick-item';
+  extra.textContent = '＋ Новая папка';
+  extra.addEventListener('click', () => openNameModal('Новая папка', '', 'create-then-move'));
+  pick.appendChild(extra);
+  document.getElementById('modalWrap').classList.add('open');
+}
+
+async function addBookToCustomFolder(folderId, book) {
+  if (!userId || !book) return;
+  try {
+    await fetch(`/api/library/${userId}/folders/${folderId}/books/${book.id}`, { method: 'POST' });
+    const folder = libraryData.folders.find(f => f.id === folderId);
+    if (folder) folder.count = (folder.count || 0) + 1;
+    if (libraryData.customBooks[folderId]) {
+      if (!libraryData.customBooks[folderId].some(x => x.id === book.id)) {
+        libraryData.customBooks[folderId].unshift(book);
+      }
+    }
+    updateFolderCounts();
+    closeModal();
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) { /* тихо */ }
+}
+
+async function submitFolderName() {
+  const name = document.getElementById('modalInput').value.trim();
+  if (!name || !userId) return;
+  if (modalMode === 'rename') {
+    const cid = customFolderId(currentFolder);
+    const res = await fetch(`/api/library/${userId}/folders/${cid}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const f = libraryData.folders.find(x => x.id === cid);
+      if (f) f.name = data.name;
+      document.getElementById('folderHeading').textContent = data.name;
+      updateFolderCounts();
+    }
+    closeModal();
+    return;
+  }
+  const res = await fetch(`/api/library/${userId}/folders`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) return;
+  const created = await res.json();
+  libraryData.folders.push(created);
+  libraryData.customBooks[created.id] = [];
+  const bookToMove = movingBook;
+  const thenMove = modalMode === 'create-then-move';
+  updateFolderCounts();
+  closeModal();
+  if (thenMove && bookToMove) {
+    await addBookToCustomFolder(created.id, bookToMove);
+  } else if (!currentFolder) {
+    openFolder('custom:' + created.id);
+  }
+}
+
+document.querySelectorAll('.folder-card[data-folder]').forEach(btn => {
   btn.addEventListener('click', () => openFolder(btn.dataset.folder));
 });
 document.getElementById('folderBack').addEventListener('click', () => {
@@ -470,6 +720,29 @@ document.getElementById('folderEdit').addEventListener('click', () => {
   document.getElementById('folderEdit').textContent = folderEditMode ? 'Готово' : 'Изменить';
   document.getElementById('folderEdit').classList.toggle('on', folderEditMode);
   renderFolder();
+});
+document.getElementById('createFolderHome').addEventListener('click', askCreateFolder);
+document.getElementById('folderCreate').addEventListener('click', askCreateFolder);
+document.getElementById('folderRename').addEventListener('click', askRenameFolder);
+document.getElementById('folderDeleteCustom').addEventListener('click', () => {
+  const cid = customFolderId(currentFolder);
+  if (!cid) return;
+  const warning = 'Папка будет удалена. Книги в ней останутся в других списках, если они там есть.';
+  const go = async () => {
+    await fetch(`/api/library/${userId}/folders/${cid}`, { method: 'DELETE' });
+    closeFolder();
+    loadLibrary();
+  };
+  if (tg && tg.showConfirm) tg.showConfirm(warning, (ok) => { if (ok) go(); });
+  else if (confirm(warning)) go();
+});
+document.getElementById('modalCancel').addEventListener('click', closeModal);
+document.getElementById('modalOk').addEventListener('click', submitFolderName);
+document.getElementById('modalInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitFolderName();
+});
+document.getElementById('modalWrap').addEventListener('click', (e) => {
+  if (e.target.id === 'modalWrap') closeModal();
 });
 
 document.getElementById('resetBtn').addEventListener('click', () => {

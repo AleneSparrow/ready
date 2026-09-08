@@ -214,7 +214,68 @@ def api_library_overview(user_id: int):
         )
         history.append(brief)
 
-    return {"stats": stats, "bookmarks": bookmarks, "to_read": to_read, "history": history}
+    return {
+        "stats": stats,
+        "bookmarks": bookmarks,
+        "to_read": to_read,
+        "history": history,
+        "folders": library.list_folders(user_id),
+    }
+
+
+class FolderNameBody(BaseModel):
+    name: str
+
+
+@app.post("/api/library/{user_id}/folders")
+def api_create_folder(user_id: int, body: FolderNameBody):
+    try:
+        return library.create_folder(user_id, body.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/library/{user_id}/folders/{folder_id}")
+def api_rename_folder(user_id: int, folder_id: int, body: FolderNameBody):
+    try:
+        folder = library.rename_folder(user_id, folder_id, body.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if folder is None:
+        raise HTTPException(404, "Папка не найдена")
+    return folder
+
+
+@app.delete("/api/library/{user_id}/folders/{folder_id}")
+def api_delete_folder(user_id: int, folder_id: int):
+    if not library.delete_folder(user_id, folder_id):
+        raise HTTPException(404, "Папка не найдена")
+    return {"ok": True}
+
+
+@app.get("/api/library/{user_id}/folders/{folder_id}")
+def api_get_folder(user_id: int, folder_id: int):
+    ids = library.get_folder_books(user_id, folder_id)
+    if ids is None:
+        raise HTTPException(404, "Папка не найдена")
+    books = [b for b in (_brief(i) for i in ids) if b]
+    folders = library.list_folders(user_id)
+    name = next((f["name"] for f in folders if f["id"] == folder_id), "")
+    return {"id": folder_id, "name": name, "books": books}
+
+
+@app.post("/api/library/{user_id}/folders/{folder_id}/books/{book_id}")
+def api_add_book_to_folder(user_id: int, folder_id: int, book_id: int):
+    if not library.add_book_to_folder(user_id, folder_id, book_id):
+        raise HTTPException(404, "Папка не найдена")
+    return {"ok": True}
+
+
+@app.delete("/api/library/{user_id}/folders/{folder_id}/books/{book_id}")
+def api_remove_book_from_folder(user_id: int, folder_id: int, book_id: int):
+    if not library.remove_book_from_folder(user_id, folder_id, book_id):
+        raise HTTPException(404, "Папка не найдена")
+    return {"ok": True}
 
 
 @app.get("/app/index.html")
