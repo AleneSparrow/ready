@@ -1,8 +1,10 @@
+import os
+
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import catalog, cover, extract, library
+from . import catalog, config, cover, extract, library
 from .format_author import format_authors
 
 app = FastAPI(title="Flibusta Reader")
@@ -17,6 +19,36 @@ def _brief(book_id: int) -> dict | None:
         "author": format_authors(meta.author),
         "title": meta.title,
         "ext": meta.ext,
+    }
+
+
+@app.get("/api/_debug/disk")
+def api_debug_disk():
+    import shutil
+
+    def dir_size(path):
+        total = 0
+        count = 0
+        if os.path.isdir(path):
+            for root, _dirs, files in os.walk(path):
+                for f in files:
+                    try:
+                        total += os.path.getsize(os.path.join(root, f))
+                        count += 1
+                    except OSError:
+                        pass
+        return {"bytes": total, "count": count}
+
+    usage = shutil.disk_usage("/data")
+    return {
+        "disk_total": usage.total,
+        "disk_used": usage.used,
+        "disk_free": usage.free,
+        "catalog_db": dir_size(config.CATALOG_DB_PATH) if os.path.isfile(config.CATALOG_DB_PATH) else {"bytes": os.path.getsize(config.CATALOG_DB_PATH) if os.path.exists(config.CATALOG_DB_PATH) else 0},
+        "archives": dir_size(os.path.join(config.CACHE_DIR, "archives")),
+        "books": dir_size(os.path.join(config.CACHE_DIR, "books")),
+        "cover_archives": dir_size(os.path.join(config.CACHE_DIR, "cover_archives")),
+        "covers": dir_size(os.path.join(config.CACHE_DIR, "covers")),
     }
 
 
