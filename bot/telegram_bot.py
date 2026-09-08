@@ -1,3 +1,5 @@
+import time
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -14,7 +16,11 @@ from .format_author import format_authors
 bot = Bot(config.TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
-APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html"
+# Telegram-клиент может закэшировать Mini App по URL независимо от HTTP-кэша.
+# Версия меняется при каждом рестарте процесса (= при каждом деплое) —
+# новый URL гарантированно не подставит старую закэшированную версию.
+_APP_VERSION = str(int(time.time()))
+APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html?v={_APP_VERSION}"
 
 
 @dp.message(CommandStart())
@@ -47,7 +53,7 @@ async def search_handler(message: Message) -> None:
         author = format_authors(r.author)
         label = f"{author} — {r.title}" if author else r.title
         label = label[:64]
-        url = f"{APP_URL}?book={r.id}"
+        url = f"{APP_URL}&book={r.id}"
         buttons.append([InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
