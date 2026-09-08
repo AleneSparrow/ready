@@ -21,11 +21,20 @@ def _cover_archive_name(source_inp: str) -> str:
     return f"covers/{base}.zip"
 
 
-def _ensure_cover_archive(source_inp: str) -> str:
+def _local_cover_archive(source_inp: str) -> str | None:
     archive_name = _cover_archive_name(source_inp)
     local_path = os.path.join(COVER_ARCHIVE_CACHE_DIR, os.path.basename(archive_name))
     if os.path.exists(local_path):
         return local_path
+    return None
+
+
+def _ensure_cover_archive(source_inp: str) -> str:
+    local_path = _local_cover_archive(source_inp)
+    if local_path:
+        return local_path
+    archive_name = _cover_archive_name(source_inp)
+    local_path = os.path.join(COVER_ARCHIVE_CACHE_DIR, os.path.basename(archive_name))
     os.makedirs(COVER_ARCHIVE_CACHE_DIR, exist_ok=True)
     with cache_utils.lock_for(COVER_ARCHIVE_CACHE_DIR):
         if os.path.exists(local_path):
@@ -35,8 +44,12 @@ def _ensure_cover_archive(source_inp: str) -> str:
     return local_path
 
 
-def get_cover_jpeg(book_id: int, libid: str, source_inp: str) -> bytes | None:
-    """Возвращает JPEG-байты обложки, либо None если обложки нет."""
+def get_cover_jpeg(book_id: int, libid: str, source_inp: str, download: bool = False) -> bytes | None:
+    """Возвращает JPEG-байты обложки, либо None если обложки нет.
+
+    По умолчанию не качает архив с Drive — иначе главная с 18 картинками
+    вешает весь сервер. Уже скачанные архивы и кэш jpg показываем сразу.
+    """
     os.makedirs(COVER_CACHE_DIR, exist_ok=True)
     cache_path = os.path.join(COVER_CACHE_DIR, f"{book_id}.jpg")
     if os.path.exists(cache_path):
@@ -47,7 +60,12 @@ def get_cover_jpeg(book_id: int, libid: str, source_inp: str) -> bytes | None:
         return None
 
     try:
-        archive_path = _ensure_cover_archive(source_inp)
+        if download:
+            archive_path = _ensure_cover_archive(source_inp)
+        else:
+            archive_path = _local_cover_archive(source_inp)
+            if not archive_path:
+                return None
     except Exception:
         return None
 

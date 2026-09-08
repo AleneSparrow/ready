@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 from aiogram import Bot, Dispatcher, F
@@ -71,7 +72,7 @@ async def search_handler(message: Message) -> None:
     if not query:
         return
 
-    results = catalog.search(query)
+    results = await asyncio.to_thread(catalog.search, query)
     if not results:
         await message.answer("Ничего не нашла 🤷")
         return

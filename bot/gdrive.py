@@ -22,6 +22,9 @@ def download_file(name: str, local_path: str, folder_id: str) -> None:
         local_path,
         f"--drive-root-folder-id={folder_id}",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"rclone copyto timed out for {name}") from exc
     if result.returncode != 0:
         raise RuntimeError(f"rclone copyto failed for {name}: {result.stderr}")

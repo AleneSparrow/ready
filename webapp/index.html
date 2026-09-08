@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-more-pages-20260908 -->
+<!-- rb-unhang-20260908 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -748,8 +748,11 @@ async function loadRecs() {
 }
 
 function closeBrowse() {
-  document.getElementById('browsePage').classList.remove('open');
-  document.getElementById('browseBody').innerHTML = '';
+  const page = document.getElementById('browsePage');
+  if (!page) return;
+  page.classList.remove('open');
+  const body = document.getElementById('browseBody');
+  if (body) body.innerHTML = '';
 }
 
 function renderBrowseItems(items) {

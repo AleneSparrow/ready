@@ -37,7 +37,9 @@ class BookMeta(NamedTuple):
 
 
 def _connect() -> sqlite3.Connection:
-    return sqlite3.connect(config.CATALOG_DB_PATH)
+    conn = sqlite3.connect(config.CATALOG_DB_PATH, timeout=8)
+    conn.execute("PRAGMA busy_timeout=8000")
+    return conn
 
 
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -114,7 +116,7 @@ def _dedupe(results: list[SearchResult], limit: int) -> list[SearchResult]:
     return deduped
 
 
-def search(query: str, limit: int = 15) -> list[SearchResult]:
+def search(query: str, limit: int = 15, fuzzy: bool = True) -> list[SearchResult]:
     query = query.strip()
     if not query:
         return []
@@ -136,7 +138,7 @@ def search(query: str, limit: int = 15) -> list[SearchResult]:
         )
         ids = [row[0] for row in cur.fetchall()]
 
-        if not ids:
+        if not ids and fuzzy:
             # запасной вариант — терпит опечатки за счёт триграмм
             trgm_query = _trigram_query(query)
             if not trgm_query:
@@ -187,9 +189,10 @@ def popular(limit: int = 24) -> list[SearchResult]:
     """Известные книги каталога. На полной странице лимит больше — берём глубже по каждому запросу."""
     seen: set[int] = set()
     out: list[SearchResult] = []
+    queries = CLASSIC_QUERIES if limit > 9 else CLASSIC_QUERIES[:4]
     per = 8 if limit > 24 else 3
-    for q in CLASSIC_QUERIES:
-        for row in search(q, limit=per):
+    for q in queries:
+        for row in search(q, limit=per, fuzzy=False):
             if row.id in seen:
                 continue
             seen.add(row.id)
@@ -200,29 +203,28 @@ def popular(limit: int = 24) -> list[SearchResult]:
 
 
 def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
-    """Похожие книги: автор, затем название, затем жанр — без самой исходной."""
+    """Похожие книги: тот же автор, затем похожее название — без самой исходной."""
     conn = _connect()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT author, title, genre FROM books WHERE rowid = ?", (book_id,))
+        cur.execute("SELECT author, title FROM books WHERE rowid = ?", (book_id,))
         row = cur.fetchone()
     finally:
         conn.close()
     if not row:
         return []
-    raw_author, title, genre = row[0] or "", row[1] or "", row[2] or ""
+    raw_author, title = row[0] or "", row[1] or ""
     author = format_authors(raw_author)
     last = ""
     if author:
         last = author.split(",")[0].strip().split()[-1]
-    genre0 = genre.split(",")[0].strip() if genre else ""
-    title_q = " ".join(title.split()[:4])
+    title_q = " ".join(title.split()[:3])
     seen = {book_id}
     out: list[SearchResult] = []
-    for q in (last, title_q, genre0):
+    for q in (last, title_q):
         if not q or len(q) < 3:
             continue
-        for item in search(q, limit=max(12, limit * 3)):
+        for item in search(q, limit=limit, fuzzy=False):
             if item.id in seen:
                 continue
             seen.add(item.id)

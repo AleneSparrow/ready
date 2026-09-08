@@ -1,4 +1,5 @@
 import os
+import time
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +9,18 @@ from . import catalog, config, cover, extract, library
 from .format_author import format_authors
 
 app = FastAPI(title="Flibusta Reader")
+
+_mem: dict = {}
+
+
+def _memo(key, ttl, fn):
+    now = time.monotonic()
+    hit = _mem.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    val = fn()
+    _mem[key] = (now, val)
+    return val
 
 
 def _brief(book_id: int) -> dict | None:
@@ -63,7 +76,11 @@ def api_debug_clear_cache():
 
 
 def _popular_items(limit: int) -> list:
-    limit = min(max(int(limit), 1), 90)
+    limit = min(max(int(limit), 1), 48)
+    return _memo(("popular", limit), 180, lambda: _popular_uncached(limit))
+
+
+def _popular_uncached(limit: int) -> list:
     ids = library.popular_book_ids(limit)
     items = [b for b in (_brief(i) for i in ids) if b]
     have = {b["id"] for b in items}
@@ -89,7 +106,7 @@ def api_popular(limit: int = 9):
 def _recs_from_history(user_id: int, limit: int) -> list:
     items = []
     have: set[int] = set()
-    for entry in library.get_history(user_id, limit=10):
+    for entry in library.get_history(user_id, limit=4):
         have.add(entry["book_id"])
         for row in catalog.similar_books(entry["book_id"], limit=6):
             if row.id in have:
@@ -118,14 +135,14 @@ def _recs_from_history(user_id: int, limit: int) -> list:
 @app.get("/api/recommendations/{user_id}")
 def api_recommendations(user_id: int, limit: int = 9):
     """Короткая лента на главной: похожие на недавно читаемые."""
-    return _recs_from_history(user_id, min(max(int(limit), 1), 48))
+    return _memo(("recs", user_id, limit), 120, lambda: _recs_from_history(user_id, min(max(int(limit), 1), 36)))
 
 
 @app.get("/api/recommendations/{user_id}/by-books")
 def api_recommendations_by_books(user_id: int):
     """По 6 похожих на каждую книгу из «читать дальше» / истории."""
     groups = []
-    for entry in library.get_history(user_id, limit=8):
+    for entry in library.get_history(user_id, limit=4):
         src = _brief(entry["book_id"])
         if not src:
             continue
@@ -358,7 +375,7 @@ def api_remove_book_from_folder(user_id: int, folder_id: int, book_id: int):
 
 
 @app.get("/app/index.html")
-def api_webapp_index():
+async def api_webapp_index():
     with open("webapp/index.html", "rb") as f:
         content = f.read()
     return Response(
