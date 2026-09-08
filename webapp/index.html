@@ -9,7 +9,7 @@
   :root { color-scheme: light dark; --font-size: 17px; --accent: var(--tg-theme-button-color, #2481cc); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
-    margin: 0; height: 100%;
+    margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--tg-theme-bg-color, #ffffff);
     color: var(--tg-theme-text-color, #111111);
@@ -115,7 +115,7 @@
   /* overflow-y:hidden в paged-режиме принципиально — иначе WebKit пытается
      ОДНОВРЕМЕННО со своей нативной инерцией скроллить контейнер, пока наш JS
      позиционирует его через scrollTop, и текст дёргается туда-сюда */
-  #pager { position: relative; flex: 1; overflow-y: hidden; touch-action: none; }
+  #pager { position: relative; flex: 1; overflow-y: hidden; touch-action: none; overscroll-behavior: none; }
   #pager.scroll-mode { overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
   #columns {
     padding: 4px 20px 40px; line-height: 1.65; font-size: var(--font-size);
@@ -463,7 +463,10 @@ async function openReader(bookId) {
     const data = await res.json();
     readerTitleEl.textContent = data.title || '';
     if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    columnsEl.innerHTML = data.chapters.map(c => c.html).join('<hr/>');
+    const coverHtml = `<div style="text-align:center;margin:0 0 1.5em;">
+      <img src="/api/cover/${bookId}" style="max-width:65%;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.35);" onerror="this.parentElement.remove()" />
+    </div>`;
+    columnsEl.innerHTML = coverHtml + data.chapters.map(c => c.html).join('<hr/>');
     statusEl.style.display = 'none';
     pagerEl.style.display = 'block';
     applyMode();
