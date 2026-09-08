@@ -115,10 +115,11 @@
   /* overflow-y:hidden в paged-режиме принципиально — иначе WebKit пытается
      ОДНОВРЕМЕННО со своей нативной инерцией скроллить контейнер, пока наш JS
      позиционирует его через scrollTop, и текст дёргается туда-сюда */
-  #pager { position: relative; flex: 1; overflow-y: hidden; touch-action: none; overscroll-behavior: none; }
+  #pager { position: relative; flex: 1; overflow-y: hidden; overflow-x: hidden; touch-action: none; overscroll-behavior: none; }
   #pager.scroll-mode { overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
   #columns {
     padding: 4px 20px 40px; line-height: 1.65; font-size: var(--font-size);
+    max-width: 100%; overflow-x: hidden; word-wrap: break-word;
   }
   #columns p { margin: 0 0 1em; text-align: justify; }
   #columns h1, #columns h2, #columns h3, #columns h4 { margin: 1.4em 0 0.7em; line-height: 1.3; }

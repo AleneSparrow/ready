@@ -1,7 +1,7 @@
 import time
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -23,6 +23,20 @@ _APP_VERSION = str(int(time.time()))
 APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html?v={_APP_VERSION}"
 
 
+HELP_TEXT = (
+    "📖 Как пользоваться:\n\n"
+    "Кнопки в шапке читалки (слева направо):\n"
+    "← — назад в библиотеку\n"
+    "🔖 — добавить/убрать закладку на этой книге\n"
+    "➕ — добавить/убрать книгу из списка «читать дальше»\n"
+    "📖/📜 — переключить постраничный режим и режим ленты (обычный скролл)\n"
+    "▶️/⏸ — автопрокрутка: текст сам ползёт вниз (долгий тап на кнопке — сменить скорость)\n"
+    "A- / A+ — размер шрифта\n\n"
+    "В режиме 📖 листать можно тапом или свайпом по краям экрана. "
+    "Когда кнопка подсвечена заливкой — она включена."
+)
+
+
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
     kb = InlineKeyboardMarkup(
@@ -32,9 +46,15 @@ async def start(message: Message) -> None:
         "Привет! Это твоя читалка.\n\n"
         "Открывай библиотеку кнопкой ниже (или значком рядом с полем ввода) — "
         "там поиск с обложками, закладки и статистика чтения. "
-        "Либо просто напиши название книги прямо сюда — пришлю подборку.",
+        "Либо просто напиши название книги прямо сюда — пришлю подборку.\n\n"
+        "Что означают кнопки в читалке — команда /help.",
         reply_markup=kb,
     )
+
+
+@dp.message(Command("help"))
+async def help_cmd(message: Message) -> None:
+    await message.answer(HELP_TEXT)
 
 
 @dp.message(F.text)
