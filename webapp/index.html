@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-real-catalog-20260909 -->
+<!-- rb-plain-title-20260909 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -585,8 +585,20 @@ function bookCard(b, opts) {
   });
   return el;
 }
+function decodeEntities(s) {
+  if (!s) return '';
+  if (s.indexOf('&') < 0) return s;
+  const t = document.createElement('textarea');
+  t.innerHTML = s;
+  let v = t.value;
+  if (v.indexOf('&#') >= 0 || v.indexOf('&amp;') >= 0) {
+    t.innerHTML = v;
+    v = t.value;
+  }
+  return v;
+}
 function escapeHtml(s) {
-  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  return decodeEntities(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 }
 function renderGrid(container, items, opts) {
   container.innerHTML = '';
@@ -843,7 +855,7 @@ async function openBrowse(kind) {
         withItems.forEach(g => {
           const title = document.createElement('div');
           title.className = 'browse-group-title';
-          const name = (g.book && g.book.title) ? g.book.title : 'этой книги';
+          const name = (g.book && g.book.title) ? decodeEntities(g.book.title) : 'этой книги';
           title.textContent = 'Похоже на «' + name + '»';
           body.appendChild(title);
           const grid = document.createElement('div');
@@ -1569,7 +1581,7 @@ async function openReader(bookId) {
     const res = await fetch(`/api/book/${bookId}`);
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     const data = await res.json();
-    readerTitleEl.textContent = data.title || '';
+    readerTitleEl.textContent = decodeEntities(data.title || '');
     if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
     const coverHtml = `<div style="text-align:center;margin:0 0 1.5em;">
       <img src="/api/cover/${bookId}" style="max-width:65%;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.35);" onerror="this.parentElement.remove()" />

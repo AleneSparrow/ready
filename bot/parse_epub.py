@@ -21,6 +21,8 @@ import py7zr
 from lxml import etree
 from lxml import html as lxml_html
 
+from .plain import plain
+
 SEVEN_ZIP_MAGIC = b"7z\xbc\xaf\x27\x1c"
 
 CONTAINER_NS = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
@@ -84,7 +86,7 @@ def parse_epub(data: bytes) -> dict:
 
     def dc_text(tag: str) -> str:
         el = opf_tree.find(f".//dc:{tag}", DC_NS)
-        return (el.text or "").strip() if el is not None else ""
+        return plain((el.text or "") if el is not None else "")
 
     title = dc_text("title")
     author = dc_text("creator")
@@ -132,7 +134,7 @@ def parse_epub(data: bytes) -> dict:
         if not html.strip():
             continue
         h1 = body.find(".//h1")
-        chapter_title = h1.text_content().strip() if h1 is not None else ""
+        chapter_title = plain(h1.text_content() if h1 is not None else "")
         chapters.append({"title": chapter_title, "html": html})
 
     return {"title": title, "author": author, "chapters": chapters}

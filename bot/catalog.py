@@ -15,6 +15,7 @@ from urllib.parse import quote, unquote
 
 from . import config
 from .format_author import format_authors
+from .plain import plain
 
 
 class SearchResult(NamedTuple):
@@ -87,7 +88,7 @@ def _rows_from_ids(conn: sqlite3.Connection, ids: list[int]) -> list[SearchResul
         """,
         ids,
     )
-    by_id = {row[0]: SearchResult(*row) for row in cur.fetchall()}
+    by_id = {row[0]: SearchResult(row[0], plain(row[1] or ""), plain(row[2] or ""), row[3] or "", row[4] or "", row[5] or "") for row in cur.fetchall()}
     # сохраняем порядок релевантности, который вернул FTS
     return [by_id[i] for i in ids if i in by_id]
 
@@ -187,7 +188,7 @@ def get_book(book_id: int) -> BookMeta | None:
             (book_id,),
         )
         row = cur.fetchone()
-        return BookMeta(*row) if row else None
+        return BookMeta(row[0], plain(row[1] or ""), plain(row[2] or ""), row[3], row[4], row[5], row[6], row[7]) if row else None
     finally:
         conn.close()
 
@@ -261,7 +262,10 @@ def _by_genre_needles(needles: list[str], limit: int = 80) -> list[SearchResult]
             """,
             (*params, limit * 3),
         )
-        rows = [SearchResult(*r) for r in cur.fetchall()]
+        rows = [
+            SearchResult(r[0], plain(r[1] or ""), plain(r[2] or ""), r[3] or "", r[4] or "", r[5] or "")
+            for r in cur.fetchall()
+        ]
         return _dedupe(rows, limit)
     finally:
         conn.close()

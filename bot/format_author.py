@@ -2,10 +2,13 @@
 может содержать несколько авторов через ":" — приводим каждого
 к виду "Михаил Афанасьевич Булгаков"."""
 
+from .plain import plain
+
 
 def format_authors(raw: str) -> str:
     if not raw:
         return ""
+    raw = plain(raw)
     names = []
     for chunk in raw.split(":"):
         chunk = chunk.strip(", ")

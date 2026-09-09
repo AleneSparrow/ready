@@ -1,11 +1,13 @@
 """Парсинг .fb2 (XML) в структуру {title, author, chapters:[{title, html}]}."""
 from lxml import etree
 
+from .plain import plain
+
 FB2_NS = "http://www.gribuser.ru/xml/fictionbook/2.0"
 
 
 def _text(el) -> str:
-    return "".join(el.itertext()).strip() if el is not None else ""
+    return plain("".join(el.itertext()) if el is not None else "")
 
 
 def _escape(s: str) -> str:
