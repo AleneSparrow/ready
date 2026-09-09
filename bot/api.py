@@ -83,20 +83,23 @@ def _popular_items(limit: int) -> list:
 
 
 def _popular_uncached(limit: int) -> list:
-    ids = library.popular_book_ids(limit)
+    ids = library.popular_book_ids(limit, since_days=14)
+    if len(ids) < max(3, limit // 3):
+        ids = library.popular_book_ids(limit, since_days=90)
+    if not ids:
+        ids = library.popular_book_ids(limit, since_days=None)
     items = [b for b in (_brief(i) for i in ids) if b]
-    have = {b["id"] for b in items}
-    if len(items) < limit:
-        for row in catalog.popular(limit):
-            if row.id in have:
-                continue
-            brief = _brief(row.id)
-            if not brief:
-                continue
-            items.append(brief)
-            have.add(row.id)
-            if len(items) >= limit:
-                break
+    if items:
+        return items[:limit]
+    have: set[int] = set()
+    for row in catalog.popular(limit):
+        brief = _brief(row.id)
+        if not brief or brief["id"] in have:
+            continue
+        items.append(brief)
+        have.add(brief["id"])
+        if len(items) >= limit:
+            break
     return items[:limit]
 
 
@@ -108,9 +111,10 @@ def api_popular(limit: int = 9):
 def _recs_from_history(user_id: int, limit: int) -> list:
     items = []
     have: set[int] = set()
-    for entry in library.get_history(user_id, limit=4):
+    history = library.get_history(user_id, limit=8)
+    for entry in history:
         have.add(entry["book_id"])
-        for row in catalog.similar_books(entry["book_id"], limit=6):
+        for row in catalog.similar_books(entry["book_id"], limit=8):
             if row.id in have:
                 continue
             brief = _brief(row.id)
@@ -120,24 +124,15 @@ def _recs_from_history(user_id: int, limit: int) -> list:
             have.add(row.id)
             if len(items) >= limit:
                 return items
-    if len(items) < limit:
-        for row in catalog.popular(limit):
-            if row.id in have:
-                continue
-            brief = _brief(row.id)
-            if not brief:
-                continue
-            items.append(brief)
-            have.add(row.id)
-            if len(items) >= limit:
-                break
-    return items[:limit]
+    if items:
+        return items[:limit]
+    return _popular_items(limit)
 
 
 @app.get("/api/recommendations/{user_id}")
 def api_recommendations(user_id: int, limit: int = 9):
     """Короткая лента на главной: похожие на недавно читаемые."""
-    return _memo(("recs", user_id, limit), 120, lambda: _recs_from_history(user_id, min(max(int(limit), 1), 36)))
+    return _memo(("recs", user_id, limit), 60, lambda: _recs_from_history(user_id, min(max(int(limit), 1), 36)))
 
 
 @app.get("/api/recommendations/{user_id}/by-books")
@@ -261,9 +256,15 @@ async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, y
             await bot.send_message(user_id, "Архив получился слишком большим. Скачай книги по одной.")
             return
         zip_name = "razdel.zip"
-        meta = next((s for s in catalog.SHELVES if s["id"] == shelf), None)
-        if meta:
-            zip_name = f"{meta['title']}.zip"
+        if shelf.startswith("g:"):
+            from urllib.parse import unquote as _unquote
+            zip_name = f"{_unquote(shelf[2:])}.zip"
+        else:
+            meta = next((t for t in catalog.THEMES if t["id"] == shelf), None)
+            if not meta:
+                meta = next((s for s in catalog.AUTHOR_SHELVES if s["id"] == shelf), None)
+            if meta:
+                zip_name = f"{meta['title']}.zip"
         await bot.send_document(
             user_id,
             BufferedInputFile(payload, filename=zip_name),
@@ -454,7 +455,7 @@ def api_library_overview(user_id: int):
     to_read = [b for b in (_brief(i) for i in library.get_to_read(user_id)) if b]
 
     history = []
-    for entry in library.get_history(user_id):
+    for entry in library.get_history(user_id, limit=40):
         brief = _brief(entry["book_id"])
         if not brief:
             continue

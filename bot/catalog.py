@@ -11,6 +11,7 @@
 import re
 import sqlite3
 from typing import NamedTuple
+from urllib.parse import quote, unquote
 
 from . import config
 from .format_author import format_authors
@@ -155,6 +156,28 @@ def search(query: str, limit: int = 15, fuzzy: bool = True) -> list[SearchResult
         conn.close()
 
 
+def search_any(terms: list[str], limit: int = 40) -> list[SearchResult]:
+    """Несколько слов через OR — для темы вроде продаж: маркетинг, переговоры, сбыт."""
+    words: list[str] = []
+    for t in terms:
+        words.extend(_WORD_RE.findall((t or "").lower()))
+    words = [w for w in words if len(w) >= 3][:12]
+    if not words:
+        return []
+    match_expr = " OR ".join(f'"{w}"*' for w in words)
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT rowid FROM books_fts WHERE books_fts MATCH ? ORDER BY rank LIMIT ?",
+            (match_expr, limit * 3),
+        )
+        ids = [row[0] for row in cur.fetchall()]
+        return _dedupe(_rows_from_ids(conn, ids), limit)
+    finally:
+        conn.close()
+
+
 def get_book(book_id: int) -> BookMeta | None:
     conn = _connect()
     try:
@@ -186,7 +209,7 @@ CLASSIC_QUERIES = (
 
 
 def popular(limit: int = 24) -> list[SearchResult]:
-    """Известные книги каталога. На полной странице лимит больше — берём глубже по каждому запросу."""
+    """Запас, если ещё никто ничего не открывал — известные книги каталога."""
     seen: set[int] = set()
     out: list[SearchResult] = []
     queries = CLASSIC_QUERIES if limit > 9 else CLASSIC_QUERIES[:4]
@@ -202,65 +225,246 @@ def popular(limit: int = 24) -> list[SearchResult]:
     return out
 
 
-def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
-    """Похожие книги: тот же автор, затем похожее название — без самой исходной."""
+def _genre_tokens(genre: str) -> list[str]:
+    parts = re.split(r"[,;/|]", genre or "")
+    out = []
+    seen = set()
+    for part in parts:
+        t = re.sub(r"\s+", " ", part).strip(" .")
+        if len(t) < 3:
+            continue
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    return out
+
+
+def _by_genre_needles(needles: list[str], limit: int = 80) -> list[SearchResult]:
+    """Книги, у которых в поле genre каталога есть эти куски — не только в названии."""
+    needles = [n for n in needles if n and len(n) >= 3][:8]
+    if not needles:
+        return []
+    clauses = " OR ".join(["genre LIKE ?"] * len(needles))
+    params = [f"%{n}%" for n in needles]
     conn = _connect()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT author, title FROM books WHERE rowid = ?", (book_id,))
+        cur.execute(
+            f"""
+            SELECT rowid, author, title, genre, year, ext
+            FROM books
+            WHERE (del IS NULL OR del = '0' OR del = 0)
+              AND ({clauses})
+            LIMIT ?
+            """,
+            (*params, limit * 3),
+        )
+        rows = [SearchResult(*r) for r in cur.fetchall()]
+        return _dedupe(rows, limit)
+    finally:
+        conn.close()
+
+
+def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
+    """Похожие: тот же жанр из каталога, затем тот же автор — без самой книги."""
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT author, title, genre FROM books WHERE rowid = ?", (book_id,))
         row = cur.fetchone()
     finally:
         conn.close()
     if not row:
         return []
-    raw_author, title = row[0] or "", row[1] or ""
-    author = format_authors(raw_author)
-    last = ""
-    if author:
-        last = author.split(",")[0].strip().split()[-1]
-    title_q = " ".join(title.split()[:3])
+    raw_author, title, genre = row[0] or "", row[1] or "", row[2] or ""
     seen = {book_id}
     out: list[SearchResult] = []
-    for q in (last, title_q):
-        if not q or len(q) < 3:
-            continue
-        for item in search(q, limit=limit, fuzzy=False):
+
+    def _take(items: list[SearchResult]) -> None:
+        for item in items:
             if item.id in seen:
                 continue
             seen.add(item.id)
             out.append(item)
             if len(out) >= limit:
-                return out
-    return out
+                return
+
+    tokens = _genre_tokens(genre)
+    if tokens:
+        _take(_by_genre_needles(tokens[:4], limit=max(12, limit * 3)))
+        if len(out) >= limit:
+            return out[:limit]
+
+    author = format_authors(raw_author)
+    last = ""
+    if author:
+        last = author.split(",")[0].strip().split()[-1]
+    title_q = " ".join(title.split()[:3])
+    for q in (last, title_q):
+        if not q or len(q) < 3:
+            continue
+        _take(search(q, limit=limit, fuzzy=False))
+        if len(out) >= limit:
+            return out[:limit]
+    return out[:limit]
 
 
-SHELVES = (
-    {"id": "fiction", "group": "Жанры", "title": "Художественная литература", "emoji": "📖", "q": "роман"},
-    {"id": "detective", "group": "Жанры", "title": "Детективы", "emoji": "🔍", "q": "детектив"},
-    {"id": "fantasy", "group": "Жанры", "title": "Фантастика и фэнтези", "emoji": "✨", "q": "фантастика"},
-    {"id": "love", "group": "Жанры", "title": "Любовные романы", "emoji": "💕", "q": "любовный"},
-    {"id": "psych", "group": "Темы", "title": "Психология", "emoji": "🧠", "q": "психология"},
-    {"id": "sales", "group": "Темы", "title": "Продажи", "emoji": "💬", "q": "продажи"},
-    {"id": "business", "group": "Темы", "title": "Бизнес", "emoji": "💼", "q": "бизнес"},
-    {"id": "self", "group": "Темы", "title": "Саморазвитие", "emoji": "🌱", "q": "саморазвитие"},
-    {"id": "history", "group": "Темы", "title": "История", "emoji": "🏛", "q": "история"},
+THEMES = (
+    {
+        "id": "t:sales",
+        "title": "Продажи",
+        "emoji": "💬",
+        "needles": ("продаж", "маркетинг", "сбыт", "ритейл", "переговор", "коммерц", "клиент"),
+    },
+    {
+        "id": "t:psych",
+        "title": "Психология",
+        "emoji": "🧠",
+        "needles": ("психолог", "психотерап", "психиатр", "самооценк", "эмоци"),
+    },
+    {
+        "id": "t:business",
+        "title": "Бизнес",
+        "emoji": "💼",
+        "needles": ("бизнес", "управлен", "менеджмент", "предпринимат", "стартап"),
+    },
+    {
+        "id": "t:self",
+        "title": "Саморазвитие",
+        "emoji": "🌱",
+        "needles": ("саморазвит", "мотивац", "успех", "привычк", "продуктивн"),
+    },
+)
+
+AUTHOR_SHELVES = (
     {"id": "ru", "group": "Авторы", "title": "Русские авторы", "emoji": "🇷🇺", "queries": ("толстой", "достоевский", "булгаков", "чехов", "пушкин")},
     {"id": "usa", "group": "Авторы", "title": "Американские авторы", "emoji": "🇺🇸", "queries": ("кинг", "хемингуэй", "фитцджеральд", "твен", "лондон")},
     {"id": "world", "group": "Авторы", "title": "Зарубежные авторы", "emoji": "🌍", "queries": ("шекспир", "дюма", "маркес", "мураками")},
 )
 
+# Старое имя — архив раздела ещё ссылается на него.
+SHELVES = AUTHOR_SHELVES
+
+_EMOJI_RX = (
+    (re.compile(r"фантаст|фэнтез|фэнтези", re.I), "✨"),
+    (re.compile(r"детектив|триллер|криминал|боевик", re.I), "🔍"),
+    (re.compile(r"любовн|романс", re.I), "💕"),
+    (re.compile(r"психол", re.I), "🧠"),
+    (re.compile(r"истори", re.I), "🏛"),
+    (re.compile(r"поэз|стих", re.I), "✒️"),
+    (re.compile(r"детск|сказк", re.I), "🧸"),
+    (re.compile(r"юмор|сатир", re.I), "😄"),
+    (re.compile(r"научн|учебн", re.I), "🔬"),
+    (re.compile(r"компьютер|программ", re.I), "💻"),
+    (re.compile(r"религ|православ", re.I), "🕯"),
+    (re.compile(r"приключ", re.I), "🧭"),
+    (re.compile(r"проза", re.I), "📖"),
+)
+
+_shelves_memo: tuple[float, list[dict]] | None = None
+
+
+def _genre_emoji(title: str) -> str:
+    for rx, emoji in _EMOJI_RX:
+        if rx.search(title):
+            return emoji
+    return "📚"
+
+
+def _genre_shelves_from_db() -> list[dict]:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT genre, COUNT(*) FROM books
+            WHERE genre IS NOT NULL AND trim(genre) != ''
+              AND (del IS NULL OR del = '0' OR del = 0)
+            GROUP BY genre
+            ORDER BY COUNT(*) DESC
+            LIMIT 400
+            """
+        )
+        raw = cur.fetchall()
+    finally:
+        conn.close()
+    counts: dict[str, tuple[str, int]] = {}
+    for genre, n in raw:
+        for token in _genre_tokens(genre or ""):
+            key = token.lower()
+            if key in counts:
+                title, c = counts[key]
+                if len(token) > len(title):
+                    title = token
+                counts[key] = (title, c + n)
+            else:
+                counts[key] = (token, n)
+    ranked = sorted(counts.values(), key=lambda x: -x[1])
+    out = []
+    for title, n in ranked:
+        if n < 20:
+            continue
+        out.append(
+            {
+                "id": "g:" + quote(title, safe=""),
+                "group": "Жанры каталога",
+                "title": title,
+                "emoji": _genre_emoji(title),
+                "count": n,
+                "authors": "any",
+            }
+        )
+        if len(out) >= 80:
+            break
+    return out
+
 
 def list_shelves() -> list[dict]:
-    return [
+    global _shelves_memo
+    import time as _time
+
+    now = _time.monotonic()
+    if _shelves_memo and now - _shelves_memo[0] < 1800:
+        return _shelves_memo[1]
+    themes = [
+        {
+            "id": t["id"],
+            "group": "Темы",
+            "title": t["title"],
+            "emoji": t["emoji"],
+            "authors": "any",
+        }
+        for t in THEMES
+    ]
+    authors = [
         {
             "id": s["id"],
             "group": s["group"],
             "title": s["title"],
             "emoji": s["emoji"],
-            "authors": s.get("authors") or "any",
+            "authors": "any",
         }
-        for s in SHELVES
+        for s in AUTHOR_SHELVES
     ]
+    try:
+        genres = _genre_shelves_from_db()
+    except Exception:
+        genres = []
+    items = themes + authors + genres
+    _shelves_memo = (now, items)
+    return items
+
+
+def _needles_for_shelf(shelf_id: str) -> list[str] | None:
+    if shelf_id.startswith("g:"):
+        token = unquote(shelf_id[2:])
+        return [token] if token else None
+    if shelf_id.startswith("t:"):
+        theme = next((t for t in THEMES if t["id"] == shelf_id), None)
+        return list(theme["needles"]) if theme else None
+    return None
 
 
 def _year_int(year) -> int | None:
@@ -295,33 +499,11 @@ def _year_ok(year, year_from, year_to) -> bool:
     return True
 
 
-def catalog_books(
-    shelf_id: str,
-    authors: str = "any",
-    year_from: int | None = None,
-    year_to: int | None = None,
-    limit: int = 24,
-) -> list[SearchResult]:
-    """Подборка раздела с фильтрами по авторам и годам — без тяжёлого trigram."""
-    limit = min(max(int(limit), 1), 36)
-    shelf = next((s for s in SHELVES if s["id"] == shelf_id), None)
-    if not shelf:
-        return []
+def _filter_rows(rows: list[SearchResult], authors, year_from, year_to, limit) -> list[SearchResult]:
     mode = authors if authors in ("ru", "en", "any") else "any"
-    queries = shelf.get("queries") or (shelf.get("q"),)
-    pool: list[SearchResult] = []
-    seen_pool: set[int] = set()
-    for q in queries:
-        if not q:
-            continue
-        for row in search(q, limit=24, fuzzy=False):
-            if row.id in seen_pool:
-                continue
-            seen_pool.add(row.id)
-            pool.append(row)
     out: list[SearchResult] = []
     seen: set[int] = set()
-    for row in pool:
+    for row in rows:
         if row.id in seen:
             continue
         if not _author_ok(row.author, mode):
@@ -333,3 +515,36 @@ def catalog_books(
         if len(out) >= limit:
             break
     return out
+
+
+def catalog_books(
+    shelf_id: str,
+    authors: str = "any",
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = 24,
+) -> list[SearchResult]:
+    """Раздел: жанр/тема из поля catalog.genre плюс близкие слова, затем фильтры."""
+    limit = min(max(int(limit), 1), 48)
+    needles = _needles_for_shelf(shelf_id)
+    pool: list[SearchResult] = []
+    seen: set[int] = set()
+
+    def _add(items: list[SearchResult]) -> None:
+        for row in items:
+            if row.id in seen:
+                continue
+            seen.add(row.id)
+            pool.append(row)
+
+    if needles:
+        _add(_by_genre_needles(needles, limit=max(48, limit * 2)))
+        if len(pool) < limit:
+            _add(search_any(needles, limit=limit))
+    else:
+        shelf = next((s for s in AUTHOR_SHELVES if s["id"] == shelf_id), None)
+        if not shelf:
+            return []
+        for q in shelf.get("queries") or ():
+            _add(search(q, limit=16, fuzzy=False))
+    return _filter_rows(pool, authors, year_from, year_to, limit)

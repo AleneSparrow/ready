@@ -264,21 +264,35 @@ def get_stats(user_id: int) -> dict:
         conn.close()
 
 
-def popular_book_ids(limit: int = 24) -> list[int]:
-    """Книги, которые чаще всего открывали все читатели — задел под рекомендации."""
+def popular_book_ids(limit: int = 24, since_days: int | None = 14) -> list[int]:
+    """Что все читатели открывали за последнее время — основа блока «Популярное»."""
     conn = _connect()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT book_id, COUNT(*) AS c
-            FROM reading_history
-            GROUP BY book_id
-            ORDER BY c DESC, MAX(updated_at) DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
+        if since_days:
+            cutoff = time.time() - since_days * 86400
+            cur.execute(
+                """
+                SELECT book_id, COUNT(*) AS c
+                FROM reading_history
+                WHERE updated_at >= ? OR opened_at >= ?
+                GROUP BY book_id
+                ORDER BY c DESC, MAX(updated_at) DESC
+                LIMIT ?
+                """,
+                (cutoff, cutoff, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT book_id, COUNT(*) AS c
+                FROM reading_history
+                GROUP BY book_id
+                ORDER BY c DESC, MAX(updated_at) DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
         return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-catalog-tab-20260909 -->
+<!-- rb-real-catalog-20260909 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -509,7 +509,7 @@ const startParam = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
 const directBookId = params.get('book') || startParam || null;
 
 const FOLDER_META = {
-  history: { title: 'Продолжить чтение', empty: 'Пока ничего не читала', path: 'history' },
+    history: { title: 'История', empty: 'Пока ничего не открывала', path: 'history' },
   bookmarks: { title: 'На потом', empty: 'Пока никого не лайкнула', path: 'bookmark' },
   toread: { title: 'Мои книги', empty: 'Пока пусто — нажми 📚 на обложке', path: 'to-read' },
 };
@@ -892,7 +892,7 @@ function renderCatalog() {
         title: s.title,
         emoji: s.emoji,
         iconClass: 'custom',
-        countText: 'раздел',
+        countText: s.count ? String(s.count) : 'раздел',
         onClick: () => openShelf(s),
       }));
     });
@@ -1026,6 +1026,15 @@ function renderNestedFolderTiles() {
   }
   const folders = foldersInSection(currentFolder);
   grid.innerHTML = '';
+  if (currentFolder === 'toread') {
+    grid.appendChild(makeFolderTile({
+      title: 'История',
+      emoji: '🕑',
+      iconClass: 'history',
+      countText: pluralBooks((libraryData.history || []).length),
+      onClick: () => openFolder('history'),
+    }));
+  }
   folders.forEach(f => {
     grid.appendChild(makeFolderTile({
       title: f.name,
@@ -1033,9 +1042,11 @@ function renderNestedFolderTiles() {
       onClick: () => openFolder('custom:' + f.id),
     }));
   });
-  const has = folders.length > 0;
+  const has = folders.length > 0 || currentFolder === 'toread';
   grid.hidden = !has;
   label.hidden = !has;
+  if (currentFolder === 'toread') label.textContent = 'Разделы';
+  else label.textContent = 'Папки';
 }
 
 async function loadCustomFolderBooks(id) {
@@ -1308,6 +1319,11 @@ document.getElementById('folderBack').addEventListener('click', () => {
   if (cid) {
     const section = currentSection();
     openFolder(section);
+    return;
+  }
+  if (currentFolder === 'history') {
+    openFolder('toread');
+    setNav('mine');
     return;
   }
   showHome();
