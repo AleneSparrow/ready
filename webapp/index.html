@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-download-file-20260909 -->
+<!-- rb-catalog-dl-20260909 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -86,7 +86,7 @@
   }
   #tabbar button {
     flex: 1; border: none; background: none; padding: 8px 0 6px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
     color: var(--muted);
     display: flex; flex-direction: column; align-items: center; gap: 1px;
   }
@@ -98,9 +98,12 @@
   #heartTab { color: var(--pink); }
   #heartTab .icon { filter: drop-shadow(0 0 8px rgba(255,77,154,0.7)); animation: glow 3.2s ease-in-out infinite; }
   #homeTab.active { color: var(--neon); }
-  #libTab { color: var(--neon); }
-  #libTab .icon { filter: drop-shadow(0 0 8px rgba(79,195,255,0.75)); animation: glow 3.2s ease-in-out infinite; animation-delay: -2s; }
-  #libTab.active { color: var(--yellow); }
+  #catalogTab { color: var(--yellow); }
+  #catalogTab .icon { filter: drop-shadow(0 0 8px rgba(255,225,74,0.75)); animation: glow 3.2s ease-in-out infinite; animation-delay: -1.4s; }
+  #catalogTab.active { color: var(--neon); }
+  #libTab, #mineTab { color: var(--neon); }
+  #libTab .icon, #mineTab .icon { filter: drop-shadow(0 0 8px rgba(79,195,255,0.75)); animation: glow 3.2s ease-in-out infinite; animation-delay: -2s; }
+  #libTab.active, #mineTab.active { color: var(--yellow); }
 
   #searchInput {
     width: 100%; height: 46px; padding: 0 16px; border-radius: 16px; border: none;
@@ -231,6 +234,15 @@
   #browsePage { display: none; padding-bottom: 24px; }
   #browsePage.open { display: block; }
   #libraryHome.hidden { display: none; }
+  #catalogHome { display: none; padding-bottom: 12px; }
+  #catalogHome.open { display: block; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chip {
+    border: none; border-radius: 20px; padding: 7px 11px;
+    background: #12204a; color: inherit; font-size: 12px; font-weight: 700;
+    box-shadow: 0 0 0 1px rgba(79,195,255,0.28);
+  }
+  .chip.on { background: var(--neon); color: #041018; }
   .browse-group-title {
     font-size: 14px; font-weight: 700; color: var(--muted);
     margin: 16px 2px 8px; line-height: 1.3;
@@ -391,10 +403,20 @@
         </div>
       </div>
 
+      <div id="catalogHome">
+        <div class="section-row"><div class="section-head">Библиотека</div></div>
+        <div id="catalogGroups"></div>
+      </div>
+
       <div id="browsePage">
         <div class="folder-nav">
           <button type="button" id="browseBack">← Назад</button>
           <h2 id="browseHeading"></h2>
+        </div>
+        <div id="browseFilters" hidden>
+          <div class="chip-row" id="yearChips"></div>
+          <div class="chip-row" id="authorChips"></div>
+          <button type="button" class="more-btn wide" id="browseDownload">⬇ Скачать этот раздел</button>
         </div>
         <div id="browseBody"></div>
         <div class="empty-hint" id="browseEmpty" hidden>Пока пусто</div>
@@ -426,7 +448,8 @@
     <button type="button" id="homeTab" class="active"><span class="icon">⌂</span>Главная</button>
     <button type="button" id="playTab"><span class="icon">▶️</span>Читать</button>
     <button type="button" id="heartTab"><span class="icon">♥</span>На потом</button>
-    <button type="button" id="libTab"><span class="icon">📚</span>Библиотека</button>
+    <button type="button" id="catalogTab"><span class="icon">📚</span>Библиотека</button>
+    <button type="button" id="mineTab"><span class="icon">📒</span>Мои книги</button>
   </div>
 </div>
 
@@ -488,7 +511,7 @@ const directBookId = params.get('book') || startParam || null;
 const FOLDER_META = {
   history: { title: 'Продолжить чтение', empty: 'Пока ничего не читала', path: 'history' },
   bookmarks: { title: 'На потом', empty: 'Пока никого не лайкнула', path: 'bookmark' },
-  toread: { title: 'Моя библиотека', empty: 'Библиотека пустая — нажми 📚 на обложке', path: 'to-read' },
+  toread: { title: 'Мои книги', empty: 'Пока пусто — нажми 📚 на обложке', path: 'to-read' },
 };
 
 /* ---------------- helpers ---------------- */
@@ -602,6 +625,7 @@ searchInput.addEventListener('input', () => {
   }
   if (currentFolder) closeFolder();
   closeBrowse();
+  closeCatalog();
   showSearchMode(true);
   searchTimer = setTimeout(() => runSearch(q), 350);
 });
@@ -630,6 +654,21 @@ let currentFolder = null;
 let folderEditMode = false;
 let modalMode = null;
 let movingBook = null;
+let browseFrom = 'home';
+let catalogShelves = [];
+let catalogState = { shelf: null, authors: 'any', yearFrom: null, yearTo: null, title: '' };
+
+const YEAR_CHIPS = [
+  { id: 'all', label: 'Все годы', from: null, to: null },
+  { id: 'y00', label: '2000–2010', from: 2000, to: 2010 },
+  { id: 'y10', label: '2010–2020', from: 2010, to: 2020 },
+  { id: 'y90', label: 'до 2000', from: 1800, to: 1999 },
+];
+const AUTHOR_CHIPS = [
+  { id: 'any', label: 'Все авторы' },
+  { id: 'ru', label: 'Русские' },
+  { id: 'en', label: 'Зарубежные' },
+];
 
 function isLiked(id) {
   return (libraryData.bookmarks || []).some(x => x.id === id);
@@ -748,12 +787,19 @@ async function loadRecs() {
   } catch (e) { /* тихо */ }
 }
 
+function closeCatalog() {
+  const el = document.getElementById('catalogHome');
+  if (el) el.classList.remove('open');
+}
+
 function closeBrowse() {
   const page = document.getElementById('browsePage');
   if (!page) return;
   page.classList.remove('open');
   const body = document.getElementById('browseBody');
   if (body) body.innerHTML = '';
+  const filters = document.getElementById('browseFilters');
+  if (filters) filters.hidden = true;
 }
 
 function renderBrowseItems(items) {
@@ -768,7 +814,10 @@ function renderBrowseItems(items) {
 
 async function openBrowse(kind) {
   closeFolder();
+  closeCatalog();
+  browseFrom = 'home';
   document.getElementById('libraryHome').classList.add('hidden');
+  document.getElementById('browseFilters').hidden = true;
   const page = document.getElementById('browsePage');
   const body = document.getElementById('browseBody');
   const empty = document.getElementById('browseEmpty');
@@ -815,6 +864,129 @@ async function openBrowse(kind) {
     empty.hidden = false;
     empty.textContent = 'Не получилось загрузить';
   }
+}
+
+async function ensureCatalogShelves() {
+  if (catalogShelves.length) return catalogShelves;
+  const res = await fetch('/api/catalog/shelves');
+  catalogShelves = await res.json();
+  return catalogShelves;
+}
+
+function renderCatalog() {
+  const wrap = document.getElementById('catalogGroups');
+  wrap.innerHTML = '';
+  const groups = [];
+  catalogShelves.forEach(s => {
+    if (!groups.includes(s.group)) groups.push(s.group);
+  });
+  groups.forEach(g => {
+    const label = document.createElement('div');
+    label.className = 'folder-section-label';
+    label.textContent = g;
+    wrap.appendChild(label);
+    const grid = document.createElement('div');
+    grid.className = 'folder-grid';
+    catalogShelves.filter(s => s.group === g).forEach(s => {
+      grid.appendChild(makeFolderTile({
+        title: s.title,
+        emoji: s.emoji,
+        iconClass: 'custom',
+        countText: 'раздел',
+        onClick: () => openShelf(s),
+      }));
+    });
+    wrap.appendChild(grid);
+  });
+}
+
+async function showCatalog() {
+  closeFolder();
+  closeBrowse();
+  document.getElementById('libraryHome').classList.add('hidden');
+  document.getElementById('catalogHome').classList.add('open');
+  setNav('catalog');
+  try {
+    await ensureCatalogShelves();
+    renderCatalog();
+  } catch (e) {
+    document.getElementById('catalogGroups').textContent = 'Не получилось открыть каталог';
+  }
+}
+
+function paintChips() {
+  const yRow = document.getElementById('yearChips');
+  const aRow = document.getElementById('authorChips');
+  yRow.innerHTML = '';
+  aRow.innerHTML = '';
+  YEAR_CHIPS.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + ((catalogState.yearFrom === c.from && catalogState.yearTo === c.to) ? ' on' : '');
+    b.textContent = c.label;
+    b.addEventListener('click', () => {
+      catalogState.yearFrom = c.from;
+      catalogState.yearTo = c.to;
+      loadShelfBooks();
+      paintChips();
+    });
+    yRow.appendChild(b);
+  });
+  AUTHOR_CHIPS.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (catalogState.authors === c.id ? ' on' : '');
+    b.textContent = c.label;
+    b.addEventListener('click', () => {
+      catalogState.authors = c.id;
+      loadShelfBooks();
+      paintChips();
+    });
+    aRow.appendChild(b);
+  });
+}
+
+function shelfQuery() {
+  const p = new URLSearchParams();
+  p.set('shelf', catalogState.shelf);
+  p.set('authors', catalogState.authors || 'any');
+  p.set('limit', '24');
+  if (catalogState.yearFrom != null) p.set('year_from', String(catalogState.yearFrom));
+  if (catalogState.yearTo != null) p.set('year_to', String(catalogState.yearTo));
+  return p.toString();
+}
+
+async function loadShelfBooks() {
+  const empty = document.getElementById('browseEmpty');
+  const body = document.getElementById('browseBody');
+  body.innerHTML = '';
+  empty.hidden = true;
+  try {
+    const res = await fetch('/api/catalog/books?' + shelfQuery());
+    const items = await res.json();
+    renderBrowseItems(items);
+  } catch (e) {
+    empty.hidden = false;
+    empty.textContent = 'Не получилось загрузить раздел';
+  }
+}
+
+async function openShelf(shelf) {
+  closeFolder();
+  closeCatalog();
+  browseFrom = 'catalog';
+  catalogState.shelf = shelf.id;
+  catalogState.title = shelf.title;
+  catalogState.authors = shelf.authors || 'any';
+  catalogState.yearFrom = null;
+  catalogState.yearTo = null;
+  document.getElementById('libraryHome').classList.add('hidden');
+  document.getElementById('browsePage').classList.add('open');
+  document.getElementById('browseHeading').textContent = shelf.title;
+  document.getElementById('browseFilters').hidden = false;
+  setNav('catalog');
+  paintChips();
+  await loadShelfBooks();
 }
 
 async function loadLibrary() {
@@ -875,6 +1047,7 @@ async function loadCustomFolderBooks(id) {
 
 async function openFolder(key) {
   closeBrowse();
+  closeCatalog();
   currentFolder = key;
   folderEditMode = false;
   document.getElementById('libraryHome').classList.add('hidden');
@@ -1046,11 +1219,13 @@ function setNav(which) {
   document.getElementById('homeTab').classList.toggle('active', which === 'home');
   document.getElementById('playTab').classList.toggle('active', which === 'play');
   document.getElementById('heartTab').classList.toggle('active', which === 'heart');
-  document.getElementById('libTab').classList.toggle('active', which === 'lib');
+  document.getElementById('catalogTab').classList.toggle('active', which === 'catalog');
+  document.getElementById('mineTab').classList.toggle('active', which === 'mine');
 }
 function showHome() {
   closeFolder();
   closeBrowse();
+  closeCatalog();
   setNav('home');
   document.getElementById('libraryHome').classList.remove('hidden');
   loadLibrary();
@@ -1064,6 +1239,10 @@ document.getElementById('homeTab').addEventListener('click', () => {
 });
 document.getElementById('browseBack').addEventListener('click', () => {
   closeBrowse();
+  if (browseFrom === 'catalog') {
+    showCatalog();
+    return;
+  }
   document.getElementById('libraryHome').classList.remove('hidden');
 });
 ['recsOpen', 'recsMore', 'recsMoreWide'].forEach(id => {
@@ -1084,8 +1263,42 @@ document.getElementById('heartTab').addEventListener('click', () => {
   showSearchMode(false);
   openFolder('bookmarks');
 });
-document.getElementById('libTab').addEventListener('click', () => {
-  setNav('lib');
+document.getElementById('catalogTab').addEventListener('click', () => {
+  document.getElementById('searchInput').value = '';
+  showSearchMode(false);
+  showCatalog();
+});
+document.getElementById('browseDownload').addEventListener('click', async () => {
+  if (!catalogState.shelf) return;
+  if (!userId) {
+    if (tg && tg.showAlert) tg.showAlert('Скачать раздел можно из Telegram.');
+    else alert('Скачать раздел можно из Telegram.');
+    return;
+  }
+  const btn = document.getElementById('browseDownload');
+  btn.disabled = true;
+  try {
+    const p = new URLSearchParams();
+    p.set('user_id', String(userId));
+    p.set('shelf', catalogState.shelf);
+    p.set('authors', catalogState.authors || 'any');
+    if (catalogState.yearFrom != null) p.set('year_from', String(catalogState.yearFrom));
+    if (catalogState.yearTo != null) p.set('year_to', String(catalogState.yearTo));
+    const res = await fetch('/api/catalog/send?' + p.toString(), { method: 'POST' });
+    const data = await res.json();
+    const msg = data.busy
+      ? 'Уже собираю прошлый раздел. Подожди, файлы придут в чат.'
+      : 'Собираю раздел. Через минуту в чат с ботом придёт архив — до 6 книг, не вся полка сразу.';
+    if (tg && tg.showAlert) tg.showAlert(msg);
+    else alert(msg);
+  } catch (e) {
+    if (tg && tg.showAlert) tg.showAlert('Не получилось начать скачивание.');
+    else alert('Не получилось начать скачивание.');
+  }
+  btn.disabled = false;
+});
+document.getElementById('mineTab').addEventListener('click', () => {
+  setNav('mine');
   document.getElementById('searchInput').value = '';
   showSearchMode(false);
   openFolder('toread');

@@ -232,3 +232,104 @@ def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
             if len(out) >= limit:
                 return out
     return out
+
+
+SHELVES = (
+    {"id": "fiction", "group": "Жанры", "title": "Художественная литература", "emoji": "📖", "q": "роман"},
+    {"id": "detective", "group": "Жанры", "title": "Детективы", "emoji": "🔍", "q": "детектив"},
+    {"id": "fantasy", "group": "Жанры", "title": "Фантастика и фэнтези", "emoji": "✨", "q": "фантастика"},
+    {"id": "love", "group": "Жанры", "title": "Любовные романы", "emoji": "💕", "q": "любовный"},
+    {"id": "psych", "group": "Темы", "title": "Психология", "emoji": "🧠", "q": "психология"},
+    {"id": "sales", "group": "Темы", "title": "Продажи", "emoji": "💬", "q": "продажи"},
+    {"id": "business", "group": "Темы", "title": "Бизнес", "emoji": "💼", "q": "бизнес"},
+    {"id": "self", "group": "Темы", "title": "Саморазвитие", "emoji": "🌱", "q": "саморазвитие"},
+    {"id": "history", "group": "Темы", "title": "История", "emoji": "🏛", "q": "история"},
+    {"id": "ru", "group": "Авторы", "title": "Русские авторы", "emoji": "🇷🇺", "queries": ("толстой", "достоевский", "булгаков", "чехов", "пушкин")},
+    {"id": "usa", "group": "Авторы", "title": "Американские авторы", "emoji": "🇺🇸", "queries": ("кинг", "хемингуэй", "фитцджеральд", "твен", "лондон")},
+    {"id": "world", "group": "Авторы", "title": "Зарубежные авторы", "emoji": "🌍", "queries": ("шекспир", "дюма", "маркес", "мураками")},
+)
+
+
+def list_shelves() -> list[dict]:
+    return [
+        {
+            "id": s["id"],
+            "group": s["group"],
+            "title": s["title"],
+            "emoji": s["emoji"],
+            "authors": s.get("authors") or "any",
+        }
+        for s in SHELVES
+    ]
+
+
+def _year_int(year) -> int | None:
+    if not year:
+        return None
+    m = re.search(r"(19|20)\d{2}", str(year))
+    return int(m.group(0)) if m else None
+
+
+def _author_ok(author: str, mode: str) -> bool:
+    if mode in ("", "any", None):
+        return True
+    text = format_authors(author or "")
+    has_cyr = bool(re.search(r"[А-Яа-яЁё]", text))
+    if mode == "ru":
+        return has_cyr
+    if mode == "en":
+        return bool(text) and not has_cyr
+    return True
+
+
+def _year_ok(year, year_from, year_to) -> bool:
+    if year_from is None and year_to is None:
+        return True
+    y = _year_int(year)
+    if y is None:
+        return False
+    if year_from is not None and y < int(year_from):
+        return False
+    if year_to is not None and y > int(year_to):
+        return False
+    return True
+
+
+def catalog_books(
+    shelf_id: str,
+    authors: str = "any",
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = 24,
+) -> list[SearchResult]:
+    """Подборка раздела с фильтрами по авторам и годам — без тяжёлого trigram."""
+    limit = min(max(int(limit), 1), 36)
+    shelf = next((s for s in SHELVES if s["id"] == shelf_id), None)
+    if not shelf:
+        return []
+    mode = authors if authors in ("ru", "en", "any") else "any"
+    queries = shelf.get("queries") or (shelf.get("q"),)
+    pool: list[SearchResult] = []
+    seen_pool: set[int] = set()
+    for q in queries:
+        if not q:
+            continue
+        for row in search(q, limit=24, fuzzy=False):
+            if row.id in seen_pool:
+                continue
+            seen_pool.add(row.id)
+            pool.append(row)
+    out: list[SearchResult] = []
+    seen: set[int] = set()
+    for row in pool:
+        if row.id in seen:
+            continue
+        if not _author_ok(row.author, mode):
+            continue
+        if not _year_ok(row.year, year_from, year_to):
+            continue
+        seen.add(row.id)
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out

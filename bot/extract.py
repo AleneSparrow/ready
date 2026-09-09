@@ -30,7 +30,7 @@ def _ensure_archive(archive_name: str) -> str:
     return local_path
 
 
-def extract_book(archive: str, file_base: str, ext: str) -> bytes:
+def extract_book(archive: str, file_base: str, ext: str, download: bool = True) -> bytes:
     """Возвращает содержимое книги (сырые байты fb2/epub)."""
     target_name = f"{file_base}.{ext}"
 
@@ -39,6 +39,8 @@ def extract_book(archive: str, file_base: str, ext: str) -> bytes:
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
             return f.read()
+    if not download:
+        raise FileNotFoundError("not cached")
 
     local_archive = _ensure_archive(archive)
     with py7zr.SevenZipFile(local_archive, mode="r") as z:

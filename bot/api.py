@@ -173,6 +173,125 @@ def api_search(q: str):
     ]
 
 
+def _row_brief(r) -> dict:
+    return {
+        "id": r.id,
+        "author": format_authors(r.author),
+        "title": r.title,
+        "ext": r.ext,
+        "year": r.year,
+        "genre": r.genre,
+    }
+
+
+@app.get("/api/catalog/shelves")
+def api_catalog_shelves():
+    return catalog.list_shelves()
+
+
+@app.get("/api/catalog/books")
+def api_catalog_books(
+    shelf: str,
+    authors: str = "any",
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = 24,
+):
+    rows = catalog.catalog_books(shelf, authors, year_from, year_to, limit)
+    return [_row_brief(r) for r in rows]
+
+
+_send_jobs: set[int] = set()
+
+
+async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, year_to) -> None:
+    import io
+    import zipfile
+
+    from aiogram.types import BufferedInputFile
+
+    from . import bookfile
+    from .telegram_bot import bot
+
+    try:
+        await bot.send_message(
+            user_id,
+            "Собираю раздел. Пришлю до 6 книг одним архивом — не все сразу, чтобы не зависнуть.",
+        )
+        rows = await asyncio.to_thread(catalog.catalog_books, shelf, authors, year_from, year_to, 6)
+        files: list[tuple[bytes, str]] = []
+        fresh = 0
+        for r in rows:
+            got = None
+            for download in (False, True):
+                if download and fresh >= 2:
+                    break
+                try:
+                    got = await asyncio.to_thread(bookfile.get_book_file, r.id, download)
+                    if download:
+                        fresh += 1
+                    break
+                except bookfile.BookFileError:
+                    got = None
+            if got:
+                files.append(got)
+        if not files:
+            await bot.send_message(
+                user_id,
+                "В этом разделе пока нечего собрать. Открой пару книг, потом снова нажми «скачать раздел».",
+            )
+            return
+        if len(files) == 1:
+            data, name = files[0]
+            if len(data) > bookfile.TELEGRAM_DOC_MAX:
+                await bot.send_message(user_id, "Файл слишком большой для Telegram.")
+                return
+            await bot.send_document(user_id, BufferedInputFile(data, filename=name))
+            return
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            total = 0
+            for data, name in files:
+                if total + len(data) > 45 * 1024 * 1024:
+                    break
+                zf.writestr(name, data)
+                total += len(data)
+        payload = buf.getvalue()
+        if len(payload) > bookfile.TELEGRAM_DOC_MAX:
+            await bot.send_message(user_id, "Архив получился слишком большим. Скачай книги по одной.")
+            return
+        zip_name = "razdel.zip"
+        meta = next((s for s in catalog.SHELVES if s["id"] == shelf), None)
+        if meta:
+            zip_name = f"{meta['title']}.zip"
+        await bot.send_document(
+            user_id,
+            BufferedInputFile(payload, filename=zip_name),
+            caption=f"{len(files)} книг из раздела. Это не вся полка — только первая пачка.",
+        )
+    except Exception:
+        await bot.send_message(user_id, "Не получилось собрать раздел. Попробуй ещё раз через минуту.")
+    finally:
+        _send_jobs.discard(user_id)
+
+
+@app.post("/api/catalog/send")
+async def api_catalog_send(
+    user_id: int,
+    shelf: str,
+    authors: str = "any",
+    year_from: int | None = None,
+    year_to: int | None = None,
+):
+    if not user_id:
+        raise HTTPException(400, "Нет пользователя")
+    if user_id in _send_jobs:
+        return {"ok": True, "busy": True}
+    _send_jobs.add(user_id)
+    asyncio.create_task(_run_catalog_send(user_id, shelf, authors, year_from, year_to))
+    return {"ok": True, "busy": False}
+
+
 @app.get("/api/book/{book_id}")
 def api_book(book_id: int):
     import time

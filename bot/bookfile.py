@@ -18,14 +18,14 @@ def _safe_name(title: str, author: str, ext: str) -> str:
     return f"{base[:80]}.{ext}"
 
 
-def get_book_file(book_id: int) -> tuple[bytes, str]:
+def get_book_file(book_id: int, download: bool = True) -> tuple[bytes, str]:
     meta = catalog.get_book(book_id)
     if meta is None:
         raise BookFileError("Книга не найдена")
     if meta.ext not in ("fb2", "epub"):
         raise BookFileError(f"Формат {meta.ext} скачать пока нельзя")
     try:
-        data = extract.extract_book(meta.archive, meta.file, meta.ext)
+        data = extract.extract_book(meta.archive, meta.file, meta.ext, download=download)
     except FileNotFoundError as e:
         raise BookFileError("Не нашла файл внутри архива") from e
     except Exception as e:
