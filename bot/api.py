@@ -256,15 +256,12 @@ async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, y
             await bot.send_message(user_id, "Архив получился слишком большим. Скачай книги по одной.")
             return
         zip_name = "razdel.zip"
-        if shelf.startswith("g:"):
+        meta = next((s for s in catalog.CATALOG_SHELVES if s["id"] == shelf), None)
+        if meta:
+            zip_name = f"{meta['title']}.zip"
+        elif shelf.startswith("g:"):
             from urllib.parse import unquote as _unquote
             zip_name = f"{_unquote(shelf[2:])}.zip"
-        else:
-            meta = next((t for t in catalog.THEMES if t["id"] == shelf), None)
-            if not meta:
-                meta = next((s for s in catalog.AUTHOR_SHELVES if s["id"] == shelf), None)
-            if meta:
-                zip_name = f"{meta['title']}.zip"
         await bot.send_document(
             user_id,
             BufferedInputFile(payload, filename=zip_name),

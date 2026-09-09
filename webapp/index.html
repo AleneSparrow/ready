@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-plain-title-20260909 -->
+<!-- rb-genre-names-20260909 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -404,7 +404,7 @@
       </div>
 
       <div id="catalogHome">
-        <div class="section-row"><div class="section-head">Библиотека</div></div>
+        <div class="section-row"><div class="section-head">Каталог</div></div>
         <div id="catalogGroups"></div>
       </div>
 
@@ -904,7 +904,7 @@ function renderCatalog() {
         title: s.title,
         emoji: s.emoji,
         iconClass: 'custom',
-        countText: s.count ? String(s.count) : 'раздел',
+        countText: s.count ? String(s.count) : '',
         onClick: () => openShelf(s),
       }));
     });

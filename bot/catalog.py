@@ -11,11 +11,11 @@
 import re
 import sqlite3
 from typing import NamedTuple
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 from . import config
 from .format_author import format_authors
-from .plain import plain
+from .flibusta_genres import CATALOG_SHELVES, normalize_genre_code
 
 
 class SearchResult(NamedTuple):
@@ -231,7 +231,7 @@ def _genre_tokens(genre: str) -> list[str]:
     out = []
     seen = set()
     for part in parts:
-        t = re.sub(r"\s+", " ", part).strip(" .")
+        t = re.sub(r"\s+", " ", part).strip(" .:")
         if len(t) < 3:
             continue
         key = t.lower()
@@ -315,69 +315,10 @@ def similar_books(book_id: int, limit: int = 6) -> list[SearchResult]:
     return out[:limit]
 
 
-THEMES = (
-    {
-        "id": "t:sales",
-        "title": "Продажи",
-        "emoji": "💬",
-        "needles": ("продаж", "маркетинг", "сбыт", "ритейл", "переговор", "коммерц", "клиент"),
-    },
-    {
-        "id": "t:psych",
-        "title": "Психология",
-        "emoji": "🧠",
-        "needles": ("психолог", "психотерап", "психиатр", "самооценк", "эмоци"),
-    },
-    {
-        "id": "t:business",
-        "title": "Бизнес",
-        "emoji": "💼",
-        "needles": ("бизнес", "управлен", "менеджмент", "предпринимат", "стартап"),
-    },
-    {
-        "id": "t:self",
-        "title": "Саморазвитие",
-        "emoji": "🌱",
-        "needles": ("саморазвит", "мотивац", "успех", "привычк", "продуктивн"),
-    },
-)
-
-AUTHOR_SHELVES = (
-    {"id": "ru", "group": "Авторы", "title": "Русские авторы", "emoji": "🇷🇺", "queries": ("толстой", "достоевский", "булгаков", "чехов", "пушкин")},
-    {"id": "usa", "group": "Авторы", "title": "Американские авторы", "emoji": "🇺🇸", "queries": ("кинг", "хемингуэй", "фитцджеральд", "твен", "лондон")},
-    {"id": "world", "group": "Авторы", "title": "Зарубежные авторы", "emoji": "🌍", "queries": ("шекспир", "дюма", "маркес", "мураками")},
-)
-
-# Старое имя — архив раздела ещё ссылается на него.
-SHELVES = AUTHOR_SHELVES
-
-_EMOJI_RX = (
-    (re.compile(r"фантаст|фэнтез|фэнтези", re.I), "✨"),
-    (re.compile(r"детектив|триллер|криминал|боевик", re.I), "🔍"),
-    (re.compile(r"любовн|романс", re.I), "💕"),
-    (re.compile(r"психол", re.I), "🧠"),
-    (re.compile(r"истори", re.I), "🏛"),
-    (re.compile(r"поэз|стих", re.I), "✒️"),
-    (re.compile(r"детск|сказк", re.I), "🧸"),
-    (re.compile(r"юмор|сатир", re.I), "😄"),
-    (re.compile(r"научн|учебн", re.I), "🔬"),
-    (re.compile(r"компьютер|программ", re.I), "💻"),
-    (re.compile(r"религ|православ", re.I), "🕯"),
-    (re.compile(r"приключ", re.I), "🧭"),
-    (re.compile(r"проза", re.I), "📖"),
-)
-
 _shelves_memo: tuple[float, list[dict]] | None = None
 
 
-def _genre_emoji(title: str) -> str:
-    for rx, emoji in _EMOJI_RX:
-        if rx.search(title):
-            return emoji
-    return "📚"
-
-
-def _genre_shelves_from_db() -> list[dict]:
+def _genre_code_counts() -> dict[str, int]:
     conn = _connect()
     try:
         cur = conn.cursor()
@@ -388,41 +329,20 @@ def _genre_shelves_from_db() -> list[dict]:
               AND (del IS NULL OR del = '0' OR del = 0)
             GROUP BY genre
             ORDER BY COUNT(*) DESC
-            LIMIT 400
+            LIMIT 500
             """
         )
         raw = cur.fetchall()
     finally:
         conn.close()
-    counts: dict[str, tuple[str, int]] = {}
+    counts: dict[str, int] = {}
     for genre, n in raw:
         for token in _genre_tokens(genre or ""):
-            key = token.lower()
-            if key in counts:
-                title, c = counts[key]
-                if len(token) > len(title):
-                    title = token
-                counts[key] = (title, c + n)
-            else:
-                counts[key] = (token, n)
-    ranked = sorted(counts.values(), key=lambda x: -x[1])
-    out = []
-    for title, n in ranked:
-        if n < 20:
-            continue
-        out.append(
-            {
-                "id": "g:" + quote(title, safe=""),
-                "group": "Жанры каталога",
-                "title": title,
-                "emoji": _genre_emoji(title),
-                "count": n,
-                "authors": "any",
-            }
-        )
-        if len(out) >= 80:
-            break
-    return out
+            code = normalize_genre_code(token)
+            if not code:
+                continue
+            counts[code] = counts.get(code, 0) + n
+    return counts
 
 
 def list_shelves() -> list[dict]:
@@ -432,42 +352,39 @@ def list_shelves() -> list[dict]:
     now = _time.monotonic()
     if _shelves_memo and now - _shelves_memo[0] < 1800:
         return _shelves_memo[1]
-    themes = [
-        {
-            "id": t["id"],
-            "group": "Темы",
-            "title": t["title"],
-            "emoji": t["emoji"],
-            "authors": "any",
-        }
-        for t in THEMES
-    ]
-    authors = [
-        {
-            "id": s["id"],
-            "group": s["group"],
-            "title": s["title"],
-            "emoji": s["emoji"],
-            "authors": "any",
-        }
-        for s in AUTHOR_SHELVES
-    ]
     try:
-        genres = _genre_shelves_from_db()
+        counts = _genre_code_counts()
     except Exception:
-        genres = []
-    items = themes + authors + genres
+        counts = {}
+    items = []
+    for s in CATALOG_SHELVES:
+        n = sum(counts.get(c, 0) for c in s.get("codes") or ())
+        items.append(
+            {
+                "id": s["id"],
+                "group": s["group"],
+                "title": s["title"],
+                "emoji": s["emoji"],
+                "count": n or None,
+                "authors": "any",
+            }
+        )
     _shelves_memo = (now, items)
     return items
 
 
 def _needles_for_shelf(shelf_id: str) -> list[str] | None:
+    shelf = next((s for s in CATALOG_SHELVES if s["id"] == shelf_id), None)
+    if shelf:
+        needles = [normalize_genre_code(c) for c in (shelf.get("codes") or ())]
+        needles.extend(shelf.get("needles") or ())
+        return [n for n in needles if n]
     if shelf_id.startswith("g:"):
         token = unquote(shelf_id[2:])
         return [token] if token else None
     if shelf_id.startswith("t:"):
-        theme = next((t for t in THEMES if t["id"] == shelf_id), None)
-        return list(theme["needles"]) if theme else None
+        # старые закладки тем — ищем по человеческому хвосту
+        return [shelf_id[2:]]
     return None
 
 
@@ -544,11 +461,7 @@ def catalog_books(
     if needles:
         _add(_by_genre_needles(needles, limit=max(48, limit * 2)))
         if len(pool) < limit:
-            _add(search_any(needles, limit=limit))
-    else:
-        shelf = next((s for s in AUTHOR_SHELVES if s["id"] == shelf_id), None)
-        if not shelf:
-            return []
-        for q in shelf.get("queries") or ():
-            _add(search(q, limit=16, fuzzy=False))
+            extra = [n for n in needles if re.search(r"[а-яё]", n, re.I)]
+            if extra:
+                _add(search_any(extra, limit=limit))
     return _filter_rows(pool, authors, year_from, year_to, limit)
