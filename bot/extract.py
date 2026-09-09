@@ -26,7 +26,7 @@ def _ensure_archive(archive_name: str) -> str:
         if os.path.exists(local_path):
             return local_path
         cache_utils.ensure_space(ARCHIVE_CACHE_DIR, ARCHIVE_CACHE_MAX_BYTES)
-        download_file(archive_name, local_path, config.GDRIVE_LIBRARY_FOLDER_ID)
+        download_file(archive_name, local_path, config.GDRIVE_LIBRARY_FOLDER_ID, timeout=180)
     return local_path
 
 

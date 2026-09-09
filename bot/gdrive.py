@@ -12,7 +12,7 @@ import subprocess
 REMOTE = "gdrive"
 
 
-def download_file(name: str, local_path: str, folder_id: str) -> None:
+def download_file(name: str, local_path: str, folder_id: str, timeout: int = 25) -> None:
     """Скачивает файл `name` из папки `folder_id` на Google Drive в local_path."""
     os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
     cmd = [
@@ -23,7 +23,7 @@ def download_file(name: str, local_path: str, folder_id: str) -> None:
         f"--drive-root-folder-id={folder_id}",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"rclone copyto timed out for {name}") from exc
     if result.returncode != 0:

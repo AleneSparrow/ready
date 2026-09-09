@@ -1,5 +1,7 @@
+import asyncio
 import os
 import time
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
@@ -219,6 +221,43 @@ def api_book(book_id: int):
         "author": parsed["author"] or format_authors(meta.author),
         "chapters": parsed["chapters"],
     }
+
+
+@app.get("/api/book/{book_id}/file")
+def api_book_file(book_id: int):
+    from . import bookfile
+
+    try:
+        data, name = bookfile.get_book_file(book_id)
+    except bookfile.BookFileError as e:
+        raise HTTPException(404, str(e))
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@app.post("/api/book/{book_id}/send")
+async def api_send_book(book_id: int, user_id: int):
+    from aiogram.types import BufferedInputFile
+
+    from . import bookfile
+    from .telegram_bot import bot
+
+    if not user_id:
+        raise HTTPException(400, "Нет пользователя")
+    try:
+        data, name = await asyncio.to_thread(bookfile.get_book_file, book_id)
+    except bookfile.BookFileError as e:
+        raise HTTPException(404, str(e))
+    if len(data) > bookfile.TELEGRAM_DOC_MAX:
+        raise HTTPException(413, "Файл слишком большой для Telegram")
+    await bot.send_document(chat_id=user_id, document=BufferedInputFile(data, filename=name))
+    return {"ok": True}
 
 
 @app.get("/api/cover/{book_id}")

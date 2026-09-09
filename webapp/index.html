@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Читалка</title>
-<!-- rb-unhang-20260908 -->
+<!-- rb-download-file-20260909 -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -452,6 +452,7 @@
       <button id="backBtn" title="Закрыть книгу">←</button>
       <button id="bookmarkBtn" title="В любимое">♡</button>
       <button id="toReadBtn" title="В мою библиотеку">📚</button>
+      <button id="downloadBtn" title="Скачать файл">⬇</button>
       <button class="fsz" id="modeBtn" title="Постранично / лентой">📖</button>
       <button class="fsz" id="autoBtn" title="Старт / пауза автопрокрутки">▶️</button>
       <button class="fsz" id="speedBtn" title="Скорость автопрокрутки">1×</button>
@@ -1432,6 +1433,26 @@ bookmarkBtn.addEventListener('click', async () => {
 toReadBtn.addEventListener('click', async () => {
   if (!userId || !currentBookId) return;
   await toggleLibrary(findBook(currentBookId));
+});
+document.getElementById('downloadBtn').addEventListener('click', async () => {
+  if (!currentBookId) return;
+  const btn = document.getElementById('downloadBtn');
+  btn.disabled = true;
+  try {
+    if (userId) {
+      const res = await fetch(`/api/book/${currentBookId}/send?user_id=${userId}`, { method: 'POST' });
+      if (!res.ok) throw new Error('send');
+      if (tg && tg.showAlert) tg.showAlert('Файл отправила в чат с ботом. Открой чат — там fb2 или epub.');
+      else alert('Файл отправила в чат с ботом.');
+    } else {
+      window.location.href = `/api/book/${currentBookId}/file`;
+    }
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) {
+    if (tg && tg.showAlert) tg.showAlert('Не получилось скачать. Попробуй ещё раз через минуту.');
+    else alert('Не получилось скачать.');
+  }
+  btn.disabled = false;
 });
 
 /* ---------------- init ---------------- */

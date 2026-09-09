@@ -5,6 +5,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BotCommand,
+    BufferedInputFile,
+    CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     MenuButtonWebApp,
@@ -12,7 +14,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from . import catalog, config
+from . import bookfile, catalog, config
 from .format_author import format_authors
 
 bot = Bot(config.TELEGRAM_BOT_TOKEN)
@@ -39,7 +41,9 @@ HOW_TO = (
     "Каждое нажатие переключает темп: 1× → 2× → 3× → 4× → снова 1×. "
     "Скорость можно менять и на паузе, и пока текст уже ползёт.\n\n"
     "Если шапка с кнопками спряталась — тапни по центру страницы "
-    "или нажми «настройки» сверху, чтобы она вернулась."
+    "или нажми «настройки» сверху, чтобы она вернулась.\n\n"
+    "⬇ Скачать — в чате рядом с книгой или в читалке. "
+    "Файл fb2 или epub придёт сюда сообщением, его можно открыть в другой читалке."
 )
 
 HELP_TEXT = "📖 Подсказка\n\n" + HOW_TO
@@ -83,10 +87,39 @@ async def search_handler(message: Message) -> None:
         label = f"{author} — {r.title}" if author else r.title
         label = label[:64]
         url = f"{APP_URL}&book={r.id}"
-        buttons.append([InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))])
+        buttons.append([
+            InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url)),
+            InlineKeyboardButton(text="⬇ файл", callback_data=f"dl:{r.id}"),
+        ])
 
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer(f"Нашла {len(results)} книг:", reply_markup=kb)
+    await message.answer(
+        f"Нашла {len(results)} книг. Слева — открыть, справа «файл» — пришлю fb2 или epub сюда.",
+        reply_markup=kb,
+    )
+
+
+@dp.callback_query(F.data.startswith("dl:"))
+async def download_callback(query: CallbackQuery) -> None:
+    await query.answer("Собираю файл…")
+    chat_id = query.from_user.id
+    try:
+        book_id = int((query.data or "").split(":", 1)[1])
+    except (ValueError, IndexError):
+        await bot.send_message(chat_id, "Не поняла, какую книгу скачать.")
+        return
+    status = await bot.send_message(chat_id, "Качаю файл, подожди минутку…")
+    try:
+        data, name = await asyncio.to_thread(bookfile.get_book_file, book_id)
+        if len(data) > bookfile.TELEGRAM_DOC_MAX:
+            await status.edit_text("Файл слишком большой, чтобы прислать его в Telegram.")
+            return
+        await bot.send_document(chat_id, BufferedInputFile(data, filename=name))
+        await status.delete()
+    except bookfile.BookFileError:
+        await status.edit_text("Не получилось скачать книгу. Попробуй ещё раз через минуту.")
+    except Exception:
+        await status.edit_text("Не получилось скачать книгу. Попробуй ещё раз через минуту.")
 
 
 async def run_bot() -> None:
