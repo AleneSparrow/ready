@@ -975,7 +975,9 @@ async function loadShelfBooks() {
   empty.hidden = true;
   try {
     const res = await fetch('/api/catalog/books?' + shelfQuery());
+    if (!res.ok) throw new Error('catalog books');
     const items = await res.json();
+    if (!Array.isArray(items)) throw new Error('catalog books');
     renderBrowseItems(items);
   } catch (e) {
     empty.hidden = false;

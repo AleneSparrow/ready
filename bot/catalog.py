@@ -16,6 +16,7 @@ from urllib.parse import unquote
 from . import config
 from .format_author import format_authors
 from .flibusta_genres import CATALOG_SHELVES, normalize_genre_code
+from .plain import plain
 
 
 class SearchResult(NamedTuple):
