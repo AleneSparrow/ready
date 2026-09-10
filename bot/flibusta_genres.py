@@ -119,7 +119,11 @@ GENRE_LABELS = {
     "dramaturgy": "Драматургия",
     "banking": "Финансы и банки",
     "economics": "Экономика",
+    "economics_ref": "Экономика и бизнес",
     "marketing": "Маркетинг",
+    "popular_business": "Бизнес",
+    "org_behavior": "Управление и продажи",
+    "trade": "Торговля",
     "geo_guides": "Путеводители",
 }
 
@@ -143,7 +147,7 @@ CATALOG_SHELVES = (
     {"id": "s:humor", "group": "Юмор", "title": "Юмор", "emoji": "😄", "codes": ("humor", "humor_prose", "humor_verse", "humor_anecdote", "sf_humor")},
     {"id": "s:psych", "group": "Психология и развитие", "title": "Психология", "emoji": "🧠", "codes": ("sci_psychology",), "needles": ("психолог", "психотерап")},
     {"id": "s:self", "group": "Психология и развитие", "title": "Саморазвитие", "emoji": "🌱", "codes": ("religion_self",), "needles": ("саморазвит", "мотивац", "привычк")},
-    {"id": "s:sales", "group": "Деловое", "title": "Продажи и маркетинг", "emoji": "💬", "codes": ("marketing", "sci_business"), "needles": ("продаж", "маркетинг", "сбыт", "ритейл", "переговор", "клиент")},
+    {"id": "s:sales", "group": "Деловое", "title": "Продажи и маркетинг", "emoji": "💬", "codes": ("marketing", "trade", "popular_business", "org_behavior", "economics_ref"), "needles": ("продаж", "маркетинг", "сбыт", "ритейл", "переговор")},
     {"id": "s:business", "group": "Деловое", "title": "Бизнес", "emoji": "💼", "codes": ("sci_business", "banking", "economics"), "needles": ("бизнес", "управлен", "менеджмент", "предпринимат")},
     {"id": "s:history", "group": "Документальное", "title": "История", "emoji": "🏛", "codes": ("sci_history",)},
     {"id": "s:bio", "group": "Документальное", "title": "Биографии", "emoji": "👤", "codes": ("nonf_biography",)},

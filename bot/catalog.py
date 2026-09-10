@@ -228,11 +228,12 @@ def popular(limit: int = 24) -> list[SearchResult]:
 
 
 def _genre_tokens(genre: str) -> list[str]:
-    parts = re.split(r"[,;/|]", genre or "")
+    # В inp Флибусты жанры склеены двоеточием: "marketing:" или "org_behavior:popular_business:"
+    parts = re.split(r"[,;/|:]+", genre or "")
     out = []
     seen = set()
     for part in parts:
-        t = re.sub(r"\s+", " ", part).strip(" .:")
+        t = re.sub(r"\s+", " ", part).strip(" .")
         if len(t) < 3:
             continue
         key = t.lower()
@@ -245,7 +246,7 @@ def _genre_tokens(genre: str) -> list[str]:
 
 def _by_genre_needles(needles: list[str], limit: int = 80) -> list[SearchResult]:
     """Книги, у которых в поле genre каталога есть эти куски — не только в названии."""
-    needles = [n for n in needles if n and len(n) >= 3][:8]
+    needles = [n for n in needles if n and len(n) >= 3][:16]
     if not needles:
         return []
     clauses = " OR ".join(["genre LIKE ?"] * len(needles))
@@ -330,7 +331,6 @@ def _genre_code_counts() -> dict[str, int]:
               AND (del IS NULL OR del = '0' OR del = 0)
             GROUP BY genre
             ORDER BY COUNT(*) DESC
-            LIMIT 500
             """
         )
         raw = cur.fetchall()
@@ -446,9 +446,22 @@ def catalog_books(
     year_to: int | None = None,
     limit: int = 24,
 ) -> list[SearchResult]:
-    """Раздел: жанр/тема из поля catalog.genre плюс близкие слова, затем фильтры."""
+    """Раздел: коды жанра из каталога плюс поиск по словам темы (продажи, маркетинг…)."""
     limit = min(max(int(limit), 1), 48)
-    needles = _needles_for_shelf(shelf_id)
+    shelf = next((s for s in CATALOG_SHELVES if s["id"] == shelf_id), None)
+    codes: list[str] = []
+    words: list[str] = []
+    if shelf:
+        codes = [normalize_genre_code(c) for c in (shelf.get("codes") or ()) if c]
+        words = [n for n in (shelf.get("needles") or ()) if n]
+    else:
+        mixed = _needles_for_shelf(shelf_id) or []
+        for n in mixed:
+            if re.search(r"[а-яё]", n, re.I):
+                words.append(n)
+            else:
+                codes.append(n)
+
     pool: list[SearchResult] = []
     seen: set[int] = set()
 
@@ -459,10 +472,10 @@ def catalog_books(
             seen.add(row.id)
             pool.append(row)
 
-    if needles:
-        _add(_by_genre_needles(needles, limit=max(48, limit * 2)))
-        if len(pool) < limit:
-            extra = [n for n in needles if re.search(r"[а-яё]", n, re.I)]
-            if extra:
-                _add(search_any(extra, limit=limit))
+    # Сначала книги, где в названии есть тема — иначе полка «Продажи» заполняется
+    # случайным sci_business и нужные книги не попадают на экран.
+    if words:
+        _add(search_any(words, limit=max(limit, 24)))
+    if codes:
+        _add(_by_genre_needles(codes, limit=max(48, limit * 2)))
     return _filter_rows(pool, authors, year_from, year_to, limit)

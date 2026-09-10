@@ -24,7 +24,7 @@ dp = Dispatcher()
 # Версия меняется при каждом рестарте процесса (= при каждом деплое) —
 # новый URL гарантированно не подставит старую закэшированную версию.
 _APP_VERSION = str(int(time.time()))
-APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html?v={_APP_VERSION}&c=cat8"
+APP_URL = f"{config.WEBAPP_BASE_URL}/app/index.html?v={_APP_VERSION}&c=cat9"
 
 
 HOW_TO = (
