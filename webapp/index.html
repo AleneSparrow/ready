@@ -672,9 +672,10 @@ let catalogState = { shelf: null, authors: 'any', yearFrom: null, yearTo: null, 
 
 const YEAR_CHIPS = [
   { id: 'all', label: 'Все годы', from: null, to: null },
-  { id: 'y00', label: '2000–2010', from: 2000, to: 2010 },
-  { id: 'y10', label: '2010–2020', from: 2010, to: 2020 },
-  { id: 'y90', label: 'до 2000', from: 1800, to: 1999 },
+  { id: 'y20', label: '2020 и новее', from: 2020, to: 2035 },
+  { id: 'y10', label: '2010–2019', from: 2010, to: 2019 },
+  { id: 'y00', label: '2000–2009', from: 2000, to: 2009 },
+  { id: 'y90', label: 'до 2000', from: 1700, to: 1999 },
 ];
 const AUTHOR_CHIPS = [
   { id: 'any', label: 'Все авторы' },

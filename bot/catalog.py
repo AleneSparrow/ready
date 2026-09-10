@@ -172,10 +172,10 @@ def search_any(terms: list[str], limit: int = 40) -> list[SearchResult]:
         cur = conn.cursor()
         cur.execute(
             "SELECT rowid FROM books_fts WHERE books_fts MATCH ? ORDER BY rank LIMIT ?",
-            (match_expr, limit * 3),
+            (match_expr, max(limit * 8, 120)),
         )
         ids = [row[0] for row in cur.fetchall()]
-        return _dedupe(_rows_from_ids(conn, ids), limit)
+        return _dedupe(_rows_from_ids(conn, ids), max(limit * 4, 80))
     finally:
         conn.close()
 
@@ -244,13 +244,14 @@ def _genre_tokens(genre: str) -> list[str]:
     return out
 
 
-def _by_genre_needles(needles: list[str], limit: int = 80) -> list[SearchResult]:
+def _by_genre_needles(needles: list[str], limit: int = 80, year_from: int | None = None, year_to: int | None = None) -> list[SearchResult]:
     """Книги, у которых в поле genre каталога есть эти куски — не только в названии."""
     needles = [n for n in needles if n and len(n) >= 3][:16]
     if not needles:
         return []
     clauses = " OR ".join(["genre LIKE ?"] * len(needles))
-    params = [f"%{n}%" for n in needles]
+    params: list = [f"%{n}%" for n in needles]
+    year_sql, year_params = _year_sql(year_from, year_to)
     conn = _connect()
     try:
         cur = conn.cursor()
@@ -260,15 +261,16 @@ def _by_genre_needles(needles: list[str], limit: int = 80) -> list[SearchResult]
             FROM books
             WHERE (del IS NULL OR del = '0' OR del = 0)
               AND ({clauses})
+              {year_sql}
             LIMIT ?
             """,
-            (*params, limit * 3),
+            (*params, *year_params, max(limit * 5, 400)),
         )
         rows = [
             SearchResult(r[0], plain(r[1] or ""), plain(r[2] or ""), r[3] or "", r[4] or "", r[5] or "")
             for r in cur.fetchall()
         ]
-        return _dedupe(rows, limit)
+        return _dedupe(rows, max(limit * 3, 120))
     finally:
         conn.close()
 
@@ -392,19 +394,51 @@ def _needles_for_shelf(shelf_id: str) -> list[str] | None:
 def _year_int(year) -> int | None:
     if not year:
         return None
-    m = re.search(r"(19|20)\d{2}", str(year))
-    return int(m.group(0)) if m else None
+    m = re.search(r"(1[7-9]\d{2}|20\d{2})", str(year))
+    if not m:
+        return None
+    y = int(m.group(0))
+    if y < 1700 or y > 2035:
+        return None
+    return y
+
+
+def _year_sql(year_from: int | None, year_to: int | None) -> tuple[str, list[int]]:
+    if year_from is None and year_to is None:
+        return "", []
+    yf = int(year_from if year_from is not None else 1700)
+    yt = int(year_to if year_to is not None else 2035)
+    return (
+        " AND CAST(substr(trim(COALESCE(year, '')) || '0000', 1, 4) AS INTEGER) BETWEEN ? AND ? ",
+        [yf, yt],
+    )
+
+
+def _author_bucket(author: str) -> str:
+    """Русский или зарубежный — по фамилии первого автора в поле каталога."""
+    chunk = (author or "").split(":")[0]
+    last = chunk.split(",")[0].strip()
+    if not last:
+        return ""
+    cyr = bool(re.search(r"[А-Яа-яЁё]", last))
+    lat = bool(re.search(r"[A-Za-z]", last))
+    if cyr and not lat:
+        return "ru"
+    if lat and not cyr:
+        return "en"
+    if cyr:
+        return "ru"
+    return "en"
 
 
 def _author_ok(author: str, mode: str) -> bool:
     if mode in ("", "any", None):
         return True
-    text = format_authors(author or "")
-    has_cyr = bool(re.search(r"[А-Яа-яЁё]", text))
+    bucket = _author_bucket(author)
     if mode == "ru":
-        return has_cyr
+        return bucket == "ru"
     if mode == "en":
-        return bool(text) and not has_cyr
+        return bucket == "en"
     return True
 
 
@@ -423,7 +457,7 @@ def _year_ok(year, year_from, year_to) -> bool:
 
 def _filter_rows(rows: list[SearchResult], authors, year_from, year_to, limit) -> list[SearchResult]:
     mode = authors if authors in ("ru", "en", "any") else "any"
-    out: list[SearchResult] = []
+    matched: list[SearchResult] = []
     seen: set[int] = set()
     for row in rows:
         if row.id in seen:
@@ -433,10 +467,9 @@ def _filter_rows(rows: list[SearchResult], authors, year_from, year_to, limit) -
         if not _year_ok(row.year, year_from, year_to):
             continue
         seen.add(row.id)
-        out.append(row)
-        if len(out) >= limit:
-            break
-    return out
+        matched.append(row)
+    matched.sort(key=lambda r: (_year_int(r.year) is None, -(_year_int(r.year) or 0)))
+    return matched[:limit]
 
 
 def catalog_books(
@@ -475,7 +508,7 @@ def catalog_books(
     # Сначала книги, где в названии есть тема — иначе полка «Продажи» заполняется
     # случайным sci_business и нужные книги не попадают на экран.
     if words:
-        _add(search_any(words, limit=max(limit, 24)))
+        _add(search_any(words, limit=max(limit * 4, 80)))
     if codes:
-        _add(_by_genre_needles(codes, limit=max(48, limit * 2)))
+        _add(_by_genre_needles(codes, limit=max(80, limit * 4), year_from=year_from, year_to=year_to))
     return _filter_rows(pool, authors, year_from, year_to, limit)
