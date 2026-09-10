@@ -199,43 +199,116 @@ def api_catalog_books(
 _send_jobs: set[int] = set()
 
 
-async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, year_to) -> None:
+def _shelf_zip_title(shelf: str) -> str:
+    meta = next((s for s in catalog.CATALOG_SHELVES if s["id"] == shelf), None)
+    if meta:
+        return meta["title"]
+    if shelf.startswith("g:"):
+        from urllib.parse import unquote as _unquote
+        return _unquote(shelf[2:])
+    return "razdel"
+
+
+def _pack_zip_parts(files: list[tuple[bytes, str]]) -> list[bytes]:
     import io
     import zipfile
+
+    parts: list[bytes] = []
+    current: list[tuple[bytes, str]] = []
+    size = 0
+    max_bytes = 40 * 1024 * 1024
+    max_count = 12
+
+    def flush() -> None:
+        nonlocal current, size
+        if not current:
+            return
+        buf = io.BytesIO()
+        used: dict[str, int] = {}
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for data, name in current:
+                n = name
+                used[n] = used.get(n, 0) + 1
+                if used[n] > 1:
+                    stem, dot, ext = n.rpartition(".")
+                    n = f"{stem} ({used[n]}).{ext}" if dot else f"{n} ({used[n]})"
+                zf.writestr(n, data)
+        parts.append(buf.getvalue())
+        current = []
+        size = 0
+
+    for data, name in files:
+        if current and (size + len(data) > max_bytes or len(current) >= max_count):
+            flush()
+        current.append((data, name))
+        size += len(data)
+    flush()
+    return parts
+
+
+async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, year_to) -> None:
+    from collections import OrderedDict
 
     from aiogram.types import BufferedInputFile
 
     from . import bookfile
     from .telegram_bot import bot
 
+    wanted = 24
+    max_archives = 10
     try:
         await bot.send_message(
             user_id,
-            "Собираю раздел. Пришлю до 6 книг одним архивом — не все сразу, чтобы не зависнуть.",
+            "Собираю книги раздела. Пришлю пачку с экрана — до 24 файлов. "
+            "Всю полку целиком нельзя: там тысячи книг, Telegram такое не принимает.",
         )
-        rows = await asyncio.to_thread(catalog.catalog_books, shelf, authors, year_from, year_to, 6)
-        files: list[tuple[bytes, str]] = []
-        fresh = 0
+        rows = await asyncio.to_thread(catalog.catalog_books, shelf, authors, year_from, year_to, wanted)
+        groups: OrderedDict[str, list] = OrderedDict()
         for r in rows:
-            got = None
-            for download in (False, True):
-                if download and fresh >= 2:
-                    break
+            meta = await asyncio.to_thread(catalog.get_book, r.id)
+            if meta is None or meta.ext not in ("fb2", "epub"):
+                continue
+            groups.setdefault(meta.archive, []).append(meta)
+
+        files: list[tuple[bytes, str]] = []
+        archives_fetched = 0
+        for archive, metas in groups.items():
+            members = [(m.file, m.ext) for m in metas]
+            got = await asyncio.to_thread(extract.extract_many, archive, members, False)
+            need = [m for m in metas if (m.file, m.ext) not in got]
+            if need:
+                if archives_fetched >= max_archives:
+                    continue
                 try:
-                    got = await asyncio.to_thread(bookfile.get_book_file, r.id, download)
-                    if download:
-                        fresh += 1
-                    break
-                except bookfile.BookFileError:
-                    got = None
-            if got:
-                files.append(got)
+                    extra = await asyncio.to_thread(
+                        extract.extract_many,
+                        archive,
+                        [(m.file, m.ext) for m in need],
+                        True,
+                    )
+                    got.update(extra)
+                    archives_fetched += 1
+                except Exception:
+                    continue
+            for m in metas:
+                data = got.get((m.file, m.ext))
+                if not data:
+                    continue
+                files.append(
+                    (
+                        data,
+                        bookfile._safe_name(m.title or "book", format_authors(m.author), m.ext),
+                    )
+                )
+
         if not files:
             await bot.send_message(
                 user_id,
-                "В этом разделе пока нечего собрать. Открой пару книг, потом снова нажми «скачать раздел».",
+                "Не получилось скачать файлы раздела. Подожди минуту и нажми ещё раз.",
             )
             return
+
+        title = _shelf_zip_title(shelf)
         if len(files) == 1:
             data, name = files[0]
             if len(data) > bookfile.TELEGRAM_DOC_MAX:
@@ -243,30 +316,25 @@ async def _run_catalog_send(user_id: int, shelf: str, authors: str, year_from, y
                 return
             await bot.send_document(user_id, BufferedInputFile(data, filename=name))
             return
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            total = 0
-            for data, name in files:
-                if total + len(data) > 45 * 1024 * 1024:
-                    break
-                zf.writestr(name, data)
-                total += len(data)
-        payload = buf.getvalue()
-        if len(payload) > bookfile.TELEGRAM_DOC_MAX:
+
+        zip_parts = [p for p in _pack_zip_parts(files) if p and len(p) <= bookfile.TELEGRAM_DOC_MAX]
+        if not zip_parts:
             await bot.send_message(user_id, "Архив получился слишком большим. Скачай книги по одной.")
             return
-        zip_name = "razdel.zip"
-        meta = next((s for s in catalog.CATALOG_SHELVES if s["id"] == shelf), None)
-        if meta:
-            zip_name = f"{meta['title']}.zip"
-        elif shelf.startswith("g:"):
-            from urllib.parse import unquote as _unquote
-            zip_name = f"{_unquote(shelf[2:])}.zip"
-        await bot.send_document(
-            user_id,
-            BufferedInputFile(payload, filename=zip_name),
-            caption=f"{len(files)} книг из раздела. Это не вся полка — только первая пачка.",
-        )
+        for i, payload in enumerate(zip_parts, start=1):
+            zip_name = f"{title}.zip" if len(zip_parts) == 1 else f"{title} — {i}.zip"
+            caption = f"{len(files)} книг из «{title}»."
+            if len(zip_parts) > 1:
+                caption = f"{caption} Архив {i} из {len(zip_parts)}."
+            if len(files) < len(rows):
+                caption += " Если нужны ещё — нажми «скачать раздел» ещё раз."
+            await bot.send_document(
+                user_id,
+                BufferedInputFile(payload, filename=zip_name),
+                caption=caption,
+            )
+            if i < len(zip_parts):
+                await asyncio.sleep(1)
     except Exception:
         await bot.send_message(user_id, "Не получилось собрать раздел. Попробуй ещё раз через минуту.")
     finally:

@@ -1313,7 +1313,7 @@ document.getElementById('browseDownload').addEventListener('click', async () => 
     const data = await res.json();
     const msg = data.busy
       ? 'Уже собираю прошлый раздел. Подожди, файлы придут в чат.'
-      : 'Собираю раздел. Через минуту в чат с ботом придёт архив — до 6 книг, не вся полка сразу.';
+      : 'Собираю книги с экрана (до 24) и пришлю архив в чат. Всю полку целиком — тысячи книг — Telegram не примет.';
     if (tg && tg.showAlert) tg.showAlert(msg);
     else alert(msg);
   } catch (e) {

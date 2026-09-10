@@ -30,35 +30,70 @@ def _ensure_archive(archive_name: str) -> str:
     return local_path
 
 
-def extract_book(archive: str, file_base: str, ext: str, download: bool = True) -> bytes:
-    """Возвращает содержимое книги (сырые байты fb2/epub)."""
-    target_name = f"{file_base}.{ext}"
+def _cache_path(archive: str, file_base: str, ext: str) -> str:
+    return os.path.join(BOOK_CACHE_DIR, f"{archive}__{file_base}.{ext}")
 
-    os.makedirs(BOOK_CACHE_DIR, exist_ok=True)
-    cache_path = os.path.join(BOOK_CACHE_DIR, f"{archive}__{target_name}")
-    if os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
-            return f.read()
-    if not download:
-        raise FileNotFoundError("not cached")
 
-    local_archive = _ensure_archive(archive)
-    with py7zr.SevenZipFile(local_archive, mode="r") as z:
-        names = z.getnames()
-        match = next(
-            (
-                n
-                for n in names
-                if n == target_name or n.lower() == target_name.lower() or n.endswith("/" + target_name)
-            ),
-            None,
-        )
-        if match is None:
-            raise FileNotFoundError(f"{target_name!r} не найден внутри {archive}")
-        extracted = z.read([match])
-        data = extracted[match].read()
+def _match_name(names: list[str], target_name: str) -> str | None:
+    return next(
+        (
+            n
+            for n in names
+            if n == target_name or n.lower() == target_name.lower() or n.endswith("/" + target_name)
+        ),
+        None,
+    )
 
+
+def _store_book(cache_path: str, data: bytes) -> None:
     cache_utils.ensure_space(BOOK_CACHE_DIR, BOOK_CACHE_MAX_BYTES, incoming_bytes=len(data))
     with open(cache_path, "wb") as f:
         f.write(data)
+
+
+def extract_many(archive: str, members: list[tuple[str, str]], download: bool = True) -> dict[tuple[str, str], bytes]:
+    """Достаёт несколько файлов из одного .7z. Не бросает, если части нет в кэше."""
+    os.makedirs(BOOK_CACHE_DIR, exist_ok=True)
+    out: dict[tuple[str, str], bytes] = {}
+    missing: list[tuple[str, str, str]] = []
+    for file_base, ext in members:
+        key = (file_base, ext)
+        path = _cache_path(archive, file_base, ext)
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                out[key] = f.read()
+        else:
+            missing.append((file_base, ext, f"{file_base}.{ext}"))
+    if not missing or not download:
+        return out
+    local_archive = _ensure_archive(archive)
+    with py7zr.SevenZipFile(local_archive, mode="r") as z:
+        names = z.getnames()
+        wanted = []
+        mapping = []
+        for file_base, ext, target_name in missing:
+            match = _match_name(names, target_name)
+            if match:
+                wanted.append(match)
+                mapping.append((file_base, ext, match))
+        if not wanted:
+            return out
+        extracted = z.read(wanted)
+    for file_base, ext, match in mapping:
+        payload = extracted.get(match)
+        if payload is None:
+            continue
+        data = payload.read()
+        path = _cache_path(archive, file_base, ext)
+        _store_book(path, data)
+        out[(file_base, ext)] = data
+    return out
+
+
+def extract_book(archive: str, file_base: str, ext: str, download: bool = True) -> bytes:
+    """Возвращает содержимое книги (сырые байты fb2/epub)."""
+    got = extract_many(archive, [(file_base, ext)], download=download)
+    data = got.get((file_base, ext))
+    if data is None:
+        raise FileNotFoundError("not cached" if not download else f"{file_base}.{ext!r} не найден внутри {archive}")
     return data
